@@ -81,7 +81,8 @@ enum WebAPI {
       web.load(done) { $0.load(URLRequest(url: url)) }
     }
     handle(r, "web.loadRequest", { a -> URLRequest in
-      var request = URLRequest(url: try url(a.optString(1)))
+      let target = try url(a.optString(1))
+      var request = URLRequest(url: target)
       request.httpMethod = a.optString(2) ?? "GET"
       for (k, v) in a.dict(3) { request.setValue("\(v)", forHTTPHeaderField: k) }
       if a.value(4) != nil { request.httpBody = try a.data(4) }
