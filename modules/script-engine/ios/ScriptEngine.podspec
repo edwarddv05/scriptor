@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
   s.description    = 'Runs user scripts in an isolated JSContext and exposes files, network, photos, video, audio and crypto APIs.'
   s.author         = ''
   s.homepage       = 'https://docs.expo.dev/modules/'
-  s.platforms      = { :ios => '16.0' }
+  s.platforms      = { :ios => '16.4' }
   s.source         = { git: '' }
   s.static_framework = true
 
