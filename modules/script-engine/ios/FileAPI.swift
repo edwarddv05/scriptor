@@ -94,6 +94,42 @@ enum FileAPI {
       return to.path
     }
 
+    r.sync("fs.tempPath") { _, a in Paths.tempFile(a.optString(0) ?? "dat").path }
+
+    // Extended attributes (FileManager.readExtendedAttribute & co. in Scriptable).
+    r.sync("fs.xattr") { _, a in
+      let path = Paths.resolve(try a.string(0)).path
+      let name = try a.string(1)
+      let size = getxattr(path, name, nil, 0, 0, 0)
+      guard size >= 0 else { return nil }
+      var data = Data(count: size)
+      let read = data.withUnsafeMutableBytes { getxattr(path, name, $0.baseAddress, size, 0, 0) }
+      guard read >= 0 else { return nil }
+      return String(decoding: data.prefix(read), as: UTF8.self)
+    }
+    // (path, name, value | null): null removes the attribute
+    r.sync("fs.setXattr") { _, a in
+      let path = Paths.resolve(try a.string(0)).path
+      let name = try a.string(1)
+      guard let value = a.optString(2) else {
+        removexattr(path, name, 0)
+        return nil
+      }
+      let data = Data(value.utf8)
+      let status = data.withUnsafeBytes { setxattr(path, name, $0.baseAddress, data.count, 0, 0) }
+      guard status == 0 else { throw ScriptError("Could not write attribute \(name)") }
+      return nil
+    }
+    r.sync("fs.xattrs") { _, a in
+      let path = Paths.resolve(try a.string(0)).path
+      let size = listxattr(path, nil, 0, 0)
+      guard size > 0 else { return [String]() }
+      var buffer = [CChar](repeating: 0, count: size)
+      let read = listxattr(path, &buffer, size, 0)
+      guard read > 0 else { return [String]() }
+      return buffer.prefix(read).split(separator: 0).map { String(decoding: $0.map { UInt8(bitPattern: $0) }, as: UTF8.self) }
+    }
+
     // Zips a file or folder using the system coordinator (no third-party code).
     r.async("fs.zip") { _, a, done in
       do {

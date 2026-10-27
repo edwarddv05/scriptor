@@ -14,6 +14,10 @@ export default function RootLayout() {
         <Stack.Screen name="script/[name]" options={{ title: '' }} />
         <Stack.Screen name="docs" options={{ title: 'Documentación', presentation: 'modal' }} />
         <Stack.Screen name="run/[name]" options={{ title: 'Ejecutar', presentation: 'modal' }} />
+        <Stack.Screen
+          name="x-callback/[...path]"
+          options={{ headerShown: false, presentation: 'transparentModal', animation: 'none' }}
+        />
       </Stack>
     </ThemeProvider>
   );

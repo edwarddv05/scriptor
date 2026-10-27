@@ -27,6 +27,14 @@ final class NativeRegistry {
     PhotosAPI.register(self)
     MediaAPI.register(self)
     UIAPI.register(self)
+    WebAPI.register(self)
+    TableAPI.register(self)
+    GraphicsAPI.register(self)
+    FormatAPI.register(self)
+    LocationAPI.register(self)
+    CalendarAPI.register(self)
+    ContactsAPI.register(self)
+    SystemUIAPI.register(self)
   }
 
   func sync(_ name: String, _ handler: @escaping SyncHandler) { sync[name] = handler }

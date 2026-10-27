@@ -12,6 +12,15 @@ public class ScriptEngineModule: Module {
 
     Constant("documentsPath") { Paths.documents.path }
 
+    OnCreate {
+      NotificationHandler.install()
+    }
+
+    // Called by the app's x-callback route when another app returns to scriptor://x-callback/<token>/<status>.
+    Function("deliverCallback") { (token: String, status: String, params: [String: String]) in
+      CallbackURLs.deliver(token: token, status: status, params: params)
+    }
+
     // MARK: Running
 
     Function("run") { (runId: String, name: String, source: String, input: [String: Any]?) in

@@ -5,11 +5,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { preludeSource } from './prelude-source.mjs';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const prelude = fs.readFileSync(path.join(here, '../modules/script-engine/js/prelude.js'), 'utf8');
+const prelude = preludeSource();
 const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'scriptor-'));
 const resolve = (p) => (p.startsWith('/') || /^[A-Za-z]:/.test(p) ? p : path.join(docs, p));
 const u8 = (b) => new CtxUint8Array(b);
@@ -45,6 +44,22 @@ const sync = {
   'fs.readBytes': (p) => u8(fs.readFileSync(resolve(p))),
   'fs.write': (p, d) => { fs.mkdirSync(path.dirname(resolve(p)), { recursive: true }); fs.writeFileSync(resolve(p), typeof d === 'string' ? d : Buffer.from(d)); return resolve(p); },
   'fs.mkdir': (p) => fs.mkdirSync(resolve(p), { recursive: true }),
+  'fs.stat': (p) => { const st = fs.statSync(resolve(p)); return { size: st.size, created: st.birthtimeMs, modified: st.mtimeMs, type: 'public.data' }; },
+  'fs.tempPath': (ext) => path.join(docs, 'tmp-' + randomUUID() + '.' + ext),
+  'image.info': () => ({ width: 4, height: 2 }),
+  'device.info': () => ({ darkMode: false, orientation: 1, screen: { width: 390, height: 844, scale: 3 }, languages: ['es-ES'], locale: 'es_ES' }),
+  'xml.parse': () => ({ ok: true, events: [['s', 'a', { k: 'v' }], ['c', 'hi'], ['e', 'a']] }),
+  'draw.render': (spec) => { lastDraw = spec; return { path: '/tmp/x.png', width: spec.width, height: spec.height }; },
+  'web.create': () => 1,
+  'web.setFilter': () => {},
+};
+let lastDraw = null;
+let lastHTML = null;
+let lastAlert = null;
+const asyncMocks = {
+  'ui.alert': (args) => { lastAlert = args; return { index: 1, values: ['typed'] }; },
+  'web.loadHTML': (args) => { lastHTML = args[1]; return null; },
+  'web.present': () => null,
 };
 
 const ctx = vm.createContext({});
@@ -64,9 +79,11 @@ ctx.__native = {
     if (name === 'net.fetch') {
       const [url, opts, body] = args;
       setTimeout(() => ctx.__resolve(id, {
-        status: 200, statusText: 'OK', url, headers: { 'content-type': 'application/json' },
+        status: 200, statusText: 'OK', url, headers: { 'content-type': 'application/json' }, rawHeaders: { 'Content-Type': 'application/json' },
         body: u8(Buffer.from(JSON.stringify({ url, method: opts.method, headers: opts.headers, body: body === undefined ? null : Buffer.from(body).toString() }))),
       }), 1);
+    } else if (asyncMocks[name]) {
+      setTimeout(() => ctx.__resolve(id, asyncMocks[name](args)), 1);
     } else {
       setTimeout(() => ctx.__reject(id, 'unmocked ' + name), 1);
     }
@@ -155,7 +172,91 @@ const tests = {
   },
   'script input and structuredClone': async () => {
     const v = await run('misc', `const c = structuredClone({ d: new Date(0), m: new Map([[1, {a: 1}]]) }); return [Script.name, args.hello, c.m.get(1).a, c.d.getTime()].join();`);
-    assert.equal(v, 'test.js,1,1,0');
+    assert.equal(v, 'test,1,1,0');
+  },
+  'Scriptable FileManager and Data': async () => {
+    const v = await run('fm', `
+      const fm = FileManager.iCloud();
+      const p = fm.joinPath(fm.documentsDirectory(), 'notes/a.txt');
+      fm.createDirectory(fm.joinPath(fm.documentsDirectory(), 'notes'), true);
+      fm.writeString(p, 'hola');
+      fm.write(fm.joinPath(fm.documentsDirectory(), 'b.bin'), Data.fromBase64String('AQID'));
+      const bytes = fm.read(fm.joinPath(fm.documentsDirectory(), 'b.bin')).getBytes();
+      return [fm.readString(p), fm.fileExists(p), fm.fileName(p), fm.fileName(p, true), fm.fileExtension(p), bytes.join('-'),
+        Data.fromString('hi').toBase64String(), Script.name(), args.queryParameters.hello].join('|');`);
+    assert.equal(v, 'hola|true|a|a.txt|txt|1-2-3|aGk=|test|1');
+  },
+  'Scriptable Request': async () => {
+    const v = await run('req', `
+      const r = new Request('https://api.test/x');
+      r.method = 'post';
+      r.headers = { 'X-A': '1' };
+      r.body = JSON.stringify({ a: 1 });
+      const j = await r.loadJSON();
+      return [j.method, j.headers['x-a'], j.body, r.response.statusCode, r.response.headers['Content-Type'], r.response.mimeType].join('|');`);
+    assert.equal(v, 'POST|1|{"a":1}|200|application/json|application/json');
+  },
+  'Scriptable Alert and TextField': async () => {
+    const v = await run('alert', `
+      const a = new Alert();
+      a.title = 'T';
+      a.addAction('Uno');
+      a.addDestructiveAction('Borrar');
+      a.addCancelAction('No');
+      a.addTextField('nombre', 'x').setEmailAddressKeyboard();
+      const i = await a.presentAlert();
+      return i + ':' + a.textFieldValue(0);`);
+    assert.equal(v, '1:typed');
+    assert.equal(lastAlert[2].actions[1].style, 'destructive');
+    assert.equal(lastAlert[2].fields[0].keyboard, 'emailAddress');
+  },
+  'Scriptable Color, Font, DrawContext': async () => {
+    const v = await run('draw', `
+      const c = new Color('#f80', 0.5);
+      const ctx = new DrawContext();
+      ctx.size = new Size(10, 20);
+      ctx.setFillColor(Color.dynamic(Color.white(), Color.black()));
+      ctx.fillRect(new Rect(0, 0, 5, 5));
+      const p = new Path(); p.move(new Point(0, 0)); p.addLine(new Point(3, 3));
+      ctx.addPath(p); ctx.strokePath();
+      ctx.setFont(Font.boldSystemFont(12));
+      const img = ctx.getImage();
+      return [c.hex, c.alpha, Math.round(c.green * 255), img.size.height, Font.title1()._css()].join('|');`);
+    assert.equal(v, 'FF8800|0.5|136|20|400 28px -apple-system, system-ui, sans-serif');
+    assert.equal(JSON.stringify(lastDraw.ops[0][1]), JSON.stringify({ light: { hex: 'FFFFFF', alpha: 1 }, dark: { hex: '000000', alpha: 1 } }));
+    assert.equal(JSON.stringify(lastDraw.ops[2]), JSON.stringify(['path', [['move', 0, 0], ['line', 3, 3]]]));
+  },
+  'Scriptable widget preview': async () => {
+    await run('widget', `
+      const w = new ListWidget();
+      w.backgroundColor = new Color('#123456');
+      const t = w.addText('Hola <b>');
+      t.font = Font.headline();
+      t.textColor = Color.red();
+      const s = w.addStack();
+      s.addDate(new Date(0)).applyTimerStyle();
+      w.addSpacer();
+      await w.presentMedium();`);
+    assert.match(lastHTML, /width:364px;height:170px/);
+    assert.match(lastHTML, /Hola &lt;b&gt;/);
+    assert.match(lastHTML, /rgba\(18,52,86,1\)/);
+    assert.match(lastHTML, /data-style="timer"/);
+  },
+  'Scriptable XMLParser, Timer, misc': async () => {
+    const v = await run('xml', `
+      const out = [];
+      const p = new XMLParser('<a k="v">hi</a>');
+      p.didStartElement = (n, attrs) => out.push('<' + n + attrs.k);
+      p.foundCharacters = (s) => out.push(s);
+      p.didEndElement = (n) => out.push('/' + n);
+      p.didEndDocument = () => out.push('end');
+      p.parse();
+      let ticks = 0;
+      await new Promise((done) => { const t = Timer.schedule(2, true, () => { if (++ticks === 3) { t.invalidate(); done(); } }); });
+      Script.setShortcutOutput('salida');
+      return out.join(',') + '|' + ticks + '|' + config.runsInApp + '|' + Device.screenResolution().width + '|' + Device.language();
+    `);
+    assert.equal(v, '<av,hi,/a,end|3|true|1170|es');
   },
 };
 

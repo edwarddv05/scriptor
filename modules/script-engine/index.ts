@@ -20,6 +20,8 @@ declare class ScriptEngineModule extends NativeModule<Events> {
   writeScript(name: string, content: string): void;
   deleteScript(name: string): void;
   renameScript(from: string, to: string): void;
+  /** Completes a pending CallbackURL.open() in a running script. */
+  deliverCallback(token: string, status: string, params: Record<string, string>): void;
 }
 
 export default requireNativeModule<ScriptEngineModule>('ScriptEngine');

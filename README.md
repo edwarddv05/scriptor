@@ -16,6 +16,12 @@ Scriptor ejecuta scripts de JavaScript en iOS con acceso a APIs nativas, en la l
 | Carpetas externas solo mediante marcadores | `FS.pickFolder('nombre')` recuerda una carpeta para todas las ejecuciones |
 | Un bucle infinito bloquea la app | El botón Detener interrumpe incluso un `while (true)` |
 
+Los scripts de Scriptable funcionan sin cambios. Estas APIs están implementadas: `FileManager`, `Request`, `Data`, `Image`, `Alert`, `WebView`, `UITable`, `DrawContext`, `ListWidget`, `Calendar`, `Reminder`, `Contact`, `Location`, `Notification`, `Mail`, `CallbackURL` y el resto de [docs.scriptable.app](https://docs.scriptable.app). Hay tres diferencias:
+
+- Los widgets se ven como vista previa con `presentSmall()` y similares, pero no se instalan en la pantalla de inicio.
+- `FileManager.iCloud()` usa la carpeta local.
+- Las presentaciones a pantalla completa se cierran agitando el iPhone.
+
 La referencia completa está dentro de la app (botón 📖) y en [src/lib/api-docs.ts](src/lib/api-docs.ts).
 
 ## Cómo funciona

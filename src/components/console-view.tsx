@@ -44,6 +44,7 @@ export function ConsoleView({ run }: { run: RunState | undefined }) {
   return (
     <FlatList
       ref={list}
+      contentInsetAdjustmentBehavior="automatic"
       style={styles.list}
       contentContainerStyle={styles.content}
       data={run.logs}

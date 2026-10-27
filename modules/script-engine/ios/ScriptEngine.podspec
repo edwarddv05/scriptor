@@ -10,7 +10,8 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.frameworks = 'JavaScriptCore', 'Photos', 'PhotosUI', 'AVFoundation', 'CryptoKit', 'UniformTypeIdentifiers', 'ImageIO', 'QuickLook', 'UserNotifications'
+  s.frameworks = 'JavaScriptCore', 'Photos', 'PhotosUI', 'AVFoundation', 'CryptoKit', 'UniformTypeIdentifiers', 'ImageIO', 'QuickLook', 'UserNotifications',
+                     'WebKit', 'EventKit', 'EventKitUI', 'Contacts', 'CoreLocation', 'MessageUI', 'SafariServices', 'Speech'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

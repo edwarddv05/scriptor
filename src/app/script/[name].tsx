@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useEffect, useRef, useState, type ComponentType, type Ref } from 'react';
 import { Keyboard, KeyboardAvoidingView, PlatformColor, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
@@ -24,6 +25,8 @@ export default function EditorScreen() {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [keyboard, setKeyboard] = useState(false);
   const run = useRun(runId);
+  // The iOS header is translucent and overlaps the screen, so push the editor below it.
+  const headerHeight = useHeaderHeight();
   const running = run?.status === 'running';
 
   useEffect(() => {
@@ -88,7 +91,7 @@ export default function EditorScreen() {
           ),
         }}
       />
-      <KeyboardAvoidingView style={styles.flex} behavior="padding" keyboardVerticalOffset={100}>
+      <KeyboardAvoidingView style={[styles.flex, { paddingTop: headerHeight }]} behavior="padding">
         <EditorWebView
           ref={web}
           style={styles.flex}

@@ -7,27 +7,40 @@ import UserNotifications
 /// Dialogs, share sheet, Quick Look, haptics, pasteboard (any file type), notifications, open URL.
 enum UIAPI {
   static func register(_ r: NativeRegistry) {
-    // (title, message, { buttons: [..], fields: [{ placeholder, value, secure }], cancel, destructive })
+    // (title, message, { buttons: [..] | actions: [{ title, style }], style: 'alert'|'sheet', cancel,
+    //   destructive, fields: [{ placeholder, value, secure, keyboard, align, textColor, font }] })
     // -> { index, values } ; index -1 means cancelled
     r.async("ui.alert") { _, a, done in
       let title = a.optString(0)
       let message = a.optString(1)
       let opts = a.dict(2)
       DispatchQueue.main.async {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         let fields = (opts["fields"] as? [[String: Any]]) ?? []
+        // Action sheets cannot hold text fields, so those fall back to an alert.
+        let sheet = (opts["style"] as? String) == "sheet" && fields.isEmpty
+        let alert = UIAlertController(title: title, message: message, preferredStyle: sheet ? .actionSheet : .alert)
         for field in fields {
           alert.addTextField { tf in
             tf.placeholder = field["placeholder"] as? String
             tf.text = field["value"] as? String
             tf.isSecureTextEntry = (field["secure"] as? Bool) ?? false
+            tf.keyboardType = keyboard(field["keyboard"] as? String)
+            tf.textAlignment = (field["align"] as? String) == "center" ? .center : (field["align"] as? String) == "right" ? .right : .natural
+            if let color = Style.color(field["textColor"]) { tf.textColor = color }
+            if let font = Style.font(field["font"]) { tf.font = font }
           }
         }
         let values = { alert.textFields?.map { $0.text ?? "" } ?? [] }
-        let buttons = (opts["buttons"] as? [String]) ?? ["OK"]
-        let destructive = opts["destructive"] as? Int
-        for (i, label) in buttons.enumerated() {
-          alert.addAction(UIAlertAction(title: label, style: i == destructive ? .destructive : .default) { _ in
+        var actions = (opts["actions"] as? [[String: Any]]) ?? []
+        if actions.isEmpty {
+          let destructive = (opts["destructive"] as? NSNumber)?.intValue
+          actions = ((opts["buttons"] as? [String]) ?? ["OK"]).enumerated().map { i, label in
+            ["title": label, "style": i == destructive ? "destructive" : "default"]
+          }
+        }
+        for (i, action) in actions.enumerated() {
+          let style: UIAlertAction.Style = (action["style"] as? String) == "destructive" ? .destructive : .default
+          alert.addAction(UIAlertAction(title: action["title"] as? String, style: style) { _ in
             done(.success(["index": i, "values": values()]))
           })
         }
@@ -147,17 +160,43 @@ enum UIAPI {
 
     // MARK: Local notifications
 
-    // ({ title, body, subtitle, at (ms), in (seconds), attachment (path), sound, id }) -> id
+    // ({ title, body, subtitle, at (ms), in (seconds), attachment (path), sound, id, badge, threadIdentifier,
+    //    userInfo, openURL, scriptName, actions: [{ title, url, destructive }],
+    //    trigger: { type: 'date', at } | { type: 'daily'|'weekly', weekday, hour, minute, repeats } }) -> id
     r.async("notify.schedule") { _, a, done in
       let opts = a.dict(0)
       let center = UNUserNotificationCenter.current()
       center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
         guard granted else { return done(.failure(error ?? ScriptError("Notifications not allowed"))) }
+        let id = (opts["id"] as? String) ?? UUID().uuidString
         let content = UNMutableNotificationContent()
         content.title = (opts["title"] as? String) ?? ""
         content.body = (opts["body"] as? String) ?? ""
         content.subtitle = (opts["subtitle"] as? String) ?? ""
-        if (opts["sound"] as? Bool) ?? true { content.sound = .default }
+        if let thread = opts["threadIdentifier"] as? String { content.threadIdentifier = thread }
+        if let badge = opts["badge"] as? NSNumber { content.badge = badge }
+        // Sound: false/"none" silences it; any other value plays the default sound.
+        let sound = opts["sound"]
+        if (sound as? Bool) != false && (sound as? String) != "none" { content.sound = .default }
+        var info = (opts["userInfo"] as? [String: Any]) ?? [:]
+        info["scriptor.openURL"] = opts["openURL"] as? String
+        info["scriptor.scriptName"] = opts["scriptName"] as? String
+        let actions = (opts["actions"] as? [[String: Any]]) ?? []
+        info["scriptor.actions"] = actions
+        content.userInfo = info
+        if !actions.isEmpty {
+          let category = "scriptor.\(id)"
+          let buttons = actions.enumerated().map { i, action in
+            UNNotificationAction(
+              identifier: "action.\(i)", title: (action["title"] as? String) ?? "",
+              options: (action["destructive"] as? Bool) == true ? [.destructive, .foreground] : [.foreground])
+          }
+          let newCategory = UNNotificationCategory(identifier: category, actions: buttons, intentIdentifiers: [])
+          center.getNotificationCategories { existing in
+            center.setNotificationCategories(existing.filter { $0.identifier != category }.union([newCategory]))
+          }
+          content.categoryIdentifier = category
+        }
         if let path = opts["attachment"] as? String {
           // Notification attachments are moved by iOS, so give it a copy.
           let src = Paths.resolve(path)
@@ -168,11 +207,7 @@ enum UIAPI {
             content.attachments = [attachment]
           }
         }
-        var seconds = (opts["in"] as? Double) ?? 0
-        if let at = opts["at"] as? Double { seconds = at / 1000 - Date().timeIntervalSince1970 }
-        let trigger = seconds > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false) : nil
-        let id = (opts["id"] as? String) ?? UUID().uuidString
-        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger)) { error in
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger(opts))) { error in
           if let error { done(.failure(error)) } else { done(.success(id)) }
         }
       }
@@ -183,6 +218,123 @@ enum UIAPI {
       UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
       return nil
     }
+
+    // ('pending' | 'delivered') -> [notification]
+    r.async("notify.list") { _, a, done in
+      let center = UNUserNotificationCenter.current()
+      if a.optString(0) == "delivered" {
+        center.getDeliveredNotifications { list in
+          done(.success(list.map { describe($0.request, delivered: $0.date) }))
+        }
+      } else {
+        center.getPendingNotificationRequests { list in done(.success(list.map { describe($0, delivered: nil) })) }
+      }
+    }
+    // ('pending' | 'delivered', ids | null): null removes all
+    r.sync("notify.remove") { _, a in
+      let center = UNUserNotificationCenter.current()
+      let ids = a.value(1) == nil ? nil : a.stringArray(1)
+      if a.optString(0) == "delivered" {
+        if let ids { center.removeDeliveredNotifications(withIdentifiers: ids) } else { center.removeAllDeliveredNotifications() }
+      } else {
+        if let ids { center.removePendingNotificationRequests(withIdentifiers: ids) } else { center.removeAllPendingNotificationRequests() }
+      }
+      return nil
+    }
+  }
+
+  static func keyboard(_ name: String?) -> UIKeyboardType {
+    switch name {
+    case "numberPad": return .numberPad
+    case "decimalPad": return .decimalPad
+    case "numbersAndPunctuation": return .numbersAndPunctuation
+    case "phonePad": return .phonePad
+    case "webSearch": return .webSearch
+    case "emailAddress": return .emailAddress
+    case "uRL", "url": return .URL
+    case "twitter": return .twitter
+    default: return .default
+    }
+  }
+
+  private static func trigger(_ opts: [String: Any]) -> UNNotificationTrigger? {
+    if let t = opts["trigger"] as? [String: Any] {
+      let repeats = (t["repeats"] as? Bool) ?? false
+      switch t["type"] as? String {
+      case "daily", "weekly":
+        var c = DateComponents()
+        c.hour = (t["hour"] as? NSNumber)?.intValue
+        c.minute = (t["minute"] as? NSNumber)?.intValue
+        if t["type"] as? String == "weekly" { c.weekday = (t["weekday"] as? NSNumber)?.intValue }
+        return UNCalendarNotificationTrigger(dateMatching: c, repeats: repeats)
+      case "date":
+        guard let at = num(t["at"]) else { return nil }
+        let c = Calendar.current.dateComponents(
+          [.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSince1970: at / 1000))
+        return UNCalendarNotificationTrigger(dateMatching: c, repeats: false)
+      default:
+        break
+      }
+    }
+    var seconds = num(opts["in"]) ?? 0
+    if let at = num(opts["at"]) { seconds = at / 1000 - Date().timeIntervalSince1970 }
+    return seconds > 0 ? UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false) : nil
+  }
+
+  private static func describe(_ request: UNNotificationRequest, delivered: Date?) -> [String: Any] {
+    let c = request.content
+    var info = (c.userInfo as? [String: Any]) ?? [:]
+    let openURL = info.removeValue(forKey: "scriptor.openURL")
+    let scriptName = info.removeValue(forKey: "scriptor.scriptName")
+    let actions = info.removeValue(forKey: "scriptor.actions")
+    var out: [String: Any] = [
+      "id": request.identifier, "title": c.title, "subtitle": c.subtitle, "body": c.body,
+      "threadIdentifier": c.threadIdentifier, "userInfo": info, "openURL": openURL ?? NSNull(),
+      "scriptName": scriptName ?? NSNull(), "actions": actions ?? [Any](), "badge": c.badge.map { $0 as Any } ?? NSNull(),
+    ]
+    if let delivered { out["deliveryDate"] = delivered.timeIntervalSince1970 * 1000 }
+    let next: Date? = (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate()
+      ?? (request.trigger as? UNTimeIntervalNotificationTrigger)?.nextTriggerDate()
+    if let next { out["nextTriggerDate"] = next.timeIntervalSince1970 * 1000 }
+    return out
+  }
+}
+
+/// Shows notifications while the app is open and handles taps: opens the notification's URL
+/// (or the tapped action's URL), or runs the script that scheduled it.
+final class NotificationHandler: NSObject, UNUserNotificationCenterDelegate {
+  static let shared = NotificationHandler()
+
+  static func install() {
+    DispatchQueue.main.async { UNUserNotificationCenter.current().delegate = shared }
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .list, .sound])
+  }
+
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    defer { completionHandler() }
+    let info = response.notification.request.content.userInfo
+    var target = info["scriptor.openURL"] as? String
+    if response.actionIdentifier.hasPrefix("action."), let index = Int(response.actionIdentifier.dropFirst(7)),
+      let actions = info["scriptor.actions"] as? [[String: Any]], index < actions.count
+    {
+      target = actions[index]["url"] as? String
+    } else if target == nil, response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+      let name = info["scriptor.scriptName"] as? String,
+      let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+    {
+      target = "scriptor://run/\(encoded)"
+    }
+    guard let target, let url = URL(string: target) else { return }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { UIApplication.shared.open(url) }
   }
 }
 

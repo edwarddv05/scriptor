@@ -8,7 +8,9 @@
   const calls = new Map();
 
   // Typed arrays cross the bridge as Uint8Array views starting at offset 0.
+  // Data and Image objects cross as their bytes / file path.
   function toNative(v) {
+    if (v && typeof v.__nativeValue === 'function') return toNative(v.__nativeValue());
     if (v instanceof ArrayBuffer) return new Uint8Array(v);
     if (ArrayBuffer.isView(v)) {
       const u = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
@@ -610,13 +612,6 @@
     video: (opts = {}) => callAsync('camera.capture', [{ ...opts, video: true }]),
   };
 
-  global.Image = {
-    info: (path) => callSync('image.info', path),
-    resize: (path, opts = {}) => callAsync('image.resize', [path, opts]),
-    crop: (path, opts = {}) => callAsync('image.crop', [path, opts]),
-    convert: (path, opts = {}) => callAsync('image.convert', [path, typeof opts === 'string' ? { format: opts } : opts]),
-  };
-
   global.Video = {
     info: (path) => callAsync('video.info', [path]),
     thumbnail: (path, opts = {}) => callAsync('video.thumbnail', [path, opts]),
@@ -736,21 +731,21 @@
     return evaluateModule(FS.readText(file), file);
   };
 
-  // ----------------------------------------------------------------- Script
+  // ---------------------------------------------------- Script & Scriptable
 
-  global.Script = {
-    name: info.name,
-    input: info.input,
-    /** Ends the script now, even with timers or sockets still open. */
-    complete: (result) => callSync('script.complete', result === undefined ? undefined : inspect(result)),
-  };
-  global.args = info.input;
+  // Set by Script.setShortcutOutput(); used as the result when main returns nothing.
+  let shortcutOutput;
+
+  // @include scriptable.js
 
   global.__runMain = (fn) => {
     Promise.resolve()
       .then(fn)
       .then(
-        (value) => native.mainDone(true, value === undefined ? undefined : inspect(value)),
+        (value) => {
+          if (value === undefined) value = shortcutOutput;
+          native.mainDone(true, value === undefined ? undefined : inspect(value));
+        },
         (err) => native.mainDone(false, err instanceof Error ? (err.stack ? `${err.name}: ${err.message}\n${err.stack}` : `${err.name}: ${err.message}`) : 'Uncaught ' + inspect(err))
       );
   };

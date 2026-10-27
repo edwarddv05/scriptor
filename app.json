@@ -20,6 +20,13 @@
         "NSPhotoLibraryAddUsageDescription": "Los scripts pueden guardar fotos y vídeos en tu carrete.",
         "NSCameraUsageDescription": "Los scripts pueden hacer fotos y grabar vídeo.",
         "NSMicrophoneUsageDescription": "Los scripts pueden grabar audio y vídeo con sonido.",
+        "NSLocationWhenInUseUsageDescription": "Los scripts pueden consultar tu ubicación actual.",
+        "NSCalendarsUsageDescription": "Los scripts pueden leer y crear eventos de calendario.",
+        "NSCalendarsFullAccessUsageDescription": "Los scripts pueden leer y crear eventos de calendario.",
+        "NSRemindersUsageDescription": "Los scripts pueden leer y crear recordatorios.",
+        "NSRemindersFullAccessUsageDescription": "Los scripts pueden leer y crear recordatorios.",
+        "NSContactsUsageDescription": "Los scripts pueden leer y editar tus contactos.",
+        "NSSpeechRecognitionUsageDescription": "Los scripts pueden convertir tu voz en texto con Dictation.",
         "UIBackgroundModes": ["audio"],
         "ITSAppUsesNonExemptEncryption": false
       }

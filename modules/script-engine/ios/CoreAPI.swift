@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Security
 import UIKit
@@ -20,7 +21,10 @@ enum CoreAPI {
     }
 
     r.sync("script.info") { run, _ in
-      ["name": run.name, "input": run.input, "documents": Paths.documents.path]
+      [
+        "name": run.name, "input": run.input, "documents": Paths.documents.path,
+        "firstWeekday": Calendar.current.firstWeekday,
+      ]
     }
     r.sync("script.complete") { run, a in
       run.finish(result: a.optString(0))
@@ -64,6 +68,7 @@ enum CoreAPI {
       DispatchQueue.main.sync {
         let device = UIDevice.current
         device.isBatteryMonitoringEnabled = true
+        if !device.isGeneratingDeviceOrientationNotifications { device.beginGeneratingDeviceOrientationNotifications() }
         let screen = UIScreen.main
         let states = ["unknown", "unplugged", "charging", "full"]
         info = [
@@ -77,12 +82,16 @@ enum CoreAPI {
           "screen": ["width": screen.bounds.width, "height": screen.bounds.height, "scale": screen.scale],
           "brightness": Double(screen.brightness),
           "darkMode": UITraitCollection.current.userInterfaceStyle == .dark,
+          "idiom": device.userInterfaceIdiom == .pad ? "pad" : "phone",
+          // UIDeviceOrientation raw values: 1 portrait, 2 upside down, 3/4 landscape, 5/6 face up/down.
+          "orientation": device.orientation.rawValue,
         ]
       }
       info["locale"] = Locale.current.identifier
       info["languages"] = Locale.preferredLanguages
       info["timeZone"] = TimeZone.current.identifier
       info["memory"] = Double(ProcessInfo.processInfo.physicalMemory)
+      info["volume"] = Double(AVAudioSession.sharedInstance().outputVolume)
       if let values = try? Paths.documents.resourceValues(forKeys: [
         .volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey,
       ]) {

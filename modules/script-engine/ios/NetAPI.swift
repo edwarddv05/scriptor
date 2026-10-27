@@ -9,6 +9,7 @@ enum NetAPI {
         let request = try makeRequest(a)
         let opts = a.dict(1)
         let manual = (opts["redirect"] as? String) == "manual"
+        let insecure = (opts["insecure"] as? Bool) == true
         var body: Data?
         if a.value(2) != nil { body = try a.data(2) }
         let task: URLSessionTask
@@ -17,7 +18,8 @@ enum NetAPI {
         } else {
           task = NetSession.shared.session.dataTask(with: request)
         }
-        NetSession.shared.track(task, run: run, callId: a.callId, kind: .data, manualRedirect: manual, done: done)
+        NetSession.shared.track(
+          task, run: run, callId: a.callId, kind: .data, manualRedirect: manual, insecure: insecure, done: done)
       } catch { done(.failure(error)) }
     }
 
@@ -115,16 +117,18 @@ final class NetSession: NSObject, URLSessionDataDelegate, URLSessionDownloadDele
     let callId: Int
     let kind: Kind
     let manualRedirect: Bool
+    let insecure: Bool
     let done: Completion
     var buffer = Data()
     var downloaded: String?
     var lastProgress = Date.distantPast
 
-    init(run: ScriptRun, callId: Int, kind: Kind, manualRedirect: Bool, done: @escaping Completion) {
+    init(run: ScriptRun, callId: Int, kind: Kind, manualRedirect: Bool, insecure: Bool, done: @escaping Completion) {
       self.run = run
       self.callId = callId
       self.kind = kind
       self.manualRedirect = manualRedirect
+      self.insecure = insecure
       self.done = done
     }
   }
@@ -141,10 +145,11 @@ final class NetSession: NSObject, URLSessionDataDelegate, URLSessionDownloadDele
 
   func track(
     _ task: URLSessionTask, run: ScriptRun, callId: Int, kind: Kind, manualRedirect: Bool = false,
-    done: @escaping Completion
+    insecure: Bool = false, done: @escaping Completion
   ) {
     lock.lock()
-    states[task.taskIdentifier] = State(run: run, callId: callId, kind: kind, manualRedirect: manualRedirect, done: done)
+    states[task.taskIdentifier] = State(
+      run: run, callId: callId, kind: kind, manualRedirect: manualRedirect, insecure: insecure, done: done)
     tasks[task.taskIdentifier] = task
     lock.unlock()
     run.addCleanup("net.\(callId)") { task.cancel() }
@@ -190,12 +195,27 @@ final class NetSession: NSObject, URLSessionDataDelegate, URLSessionDownloadDele
       return ["status": 200, "statusText": "OK", "url": response?.url?.absoluteString ?? "", "headers": [:]]
     }
     var headers: [String: String] = [:]
-    for (k, v) in http.allHeaderFields { headers["\(k)".lowercased()] = "\(v)" }
+    var rawHeaders: [String: String] = [:]
+    for (k, v) in http.allHeaderFields {
+      headers["\(k)".lowercased()] = "\(v)"
+      rawHeaders["\(k)"] = "\(v)"
+    }
+    var cookies: [[String: Any]] = []
+    if let url = http.url {
+      cookies = HTTPCookie.cookies(withResponseHeaderFields: rawHeaders, for: url).map { c in
+        [
+          "name": c.name, "value": c.value, "domain": c.domain, "path": c.path,
+          "httpOnly": c.isHTTPOnly, "sessionOnly": c.isSessionOnly,
+        ]
+      }
+    }
     return [
       "status": http.statusCode,
       "statusText": HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
       "url": http.url?.absoluteString ?? "",
       "headers": headers,
+      "rawHeaders": rawHeaders,
+      "cookies": cookies,
     ]
   }
 
@@ -255,6 +275,19 @@ final class NetSession: NSObject, URLSessionDataDelegate, URLSessionDownloadDele
     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
   ) {
     completionHandler(state(task)?.manualRedirect == true ? nil : request)
+  }
+
+  // Request.allowInsecureRequest: accept the server's certificate whatever it is.
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
+    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+  ) {
+    if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+      state(task)?.insecure == true, let trust = challenge.protectionSpace.serverTrust
+    {
+      return completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+    completionHandler(.performDefaultHandling, nil)
   }
 
   // MARK: Download
