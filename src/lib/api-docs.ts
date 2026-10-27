@@ -1,0 +1,121 @@
+// Reference shown in the Docs screen and used for editor autocomplete.
+// Keep in sync with modules/script-engine/js/prelude.js.
+
+export type ApiItem = { name: string; signature: string; description: string };
+export type ApiSection = { title: string; summary: string; items: ApiItem[] };
+
+export const API_DOCS: ApiSection[] = [
+  {
+    title: 'Script',
+    summary: 'El código se ejecuta dentro de una función async: puedes usar await y return en el nivel superior.',
+    items: [
+      { name: 'Script.name', signature: 'Script.name: string', description: 'Nombre del archivo que se está ejecutando.' },
+      { name: 'Script.input', signature: 'Script.input: object', description: 'Datos de entrada (también en la variable global args).' },
+      { name: 'Script.complete', signature: 'Script.complete(result?)', description: 'Termina el script aunque queden temporizadores o sockets abiertos.' },
+      { name: 'require', signature: 'require(name): any', description: "Carga un módulo CommonJS de Documents/modules o una ruta relativa ('./lib')." },
+      { name: 'requireURL', signature: 'await requireURL(url, { reload? })', description: 'Descarga un bundle UMD/CommonJS (unpkg, jsdelivr) y lo guarda en caché en disco.' },
+    ],
+  },
+  {
+    title: 'JavaScript moderno',
+    summary: 'APIs web que JavaScriptCore no trae y que aquí sí existen.',
+    items: [
+      { name: 'console.log', signature: 'console.log/info/warn/error/debug(...values)', description: 'Escribe en la consola con formato de objetos, Map, Set y arrays binarios.' },
+      { name: 'setTimeout', signature: 'setTimeout(fn, ms, ...args): id', description: 'Temporizador real. También setInterval, clearTimeout y clearInterval.' },
+      { name: 'sleep', signature: 'await sleep(ms)', description: 'Espera sin bloquear.' },
+      { name: 'TextEncoder', signature: 'new TextEncoder().encode(text): Uint8Array', description: 'UTF-8 a bytes. TextDecoder hace lo contrario.' },
+      { name: 'atob', signature: 'atob(b64) / btoa(binary)', description: 'Base64 como en el navegador.' },
+      { name: 'Base64', signature: 'Base64.encode(bytes|text) / decode(b64) / decodeText(b64)', description: 'Base64 directo entre bytes y texto.' },
+      { name: 'Hex', signature: 'Hex.encode(bytes) / Hex.decode(hex)', description: 'Bytes a hexadecimal y al revés.' },
+      { name: 'URL', signature: 'new URL(input, base?)', description: 'URL con searchParams, origin, href. También URLSearchParams.' },
+      { name: 'structuredClone', signature: 'structuredClone(value)', description: 'Copia profunda con Date, Map, Set y arrays binarios.' },
+      { name: 'crypto.getRandomValues', signature: 'crypto.getRandomValues(typedArray)', description: 'Bytes aleatorios seguros. También crypto.randomUUID() y crypto.subtle.digest().' },
+      { name: 'Crypto.hash', signature: "Crypto.hash('sha256', data, 'hex'|'base64'|'bytes')", description: 'md5, sha1, sha256, sha384, sha512.' },
+      { name: 'Crypto.hmac', signature: "Crypto.hmac('sha256', key, data, enc?)", description: 'HMAC con cualquiera de los hashes anteriores.' },
+      { name: 'Crypto.encrypt', signature: 'Crypto.encrypt(key, data) / Crypto.decrypt(key, data)', description: 'AES-GCM con clave de 16, 24 o 32 bytes.' },
+    ],
+  },
+  {
+    title: 'Red',
+    summary: 'fetch estándar más descargas y subidas en streaming con progreso.',
+    items: [
+      { name: 'fetch', signature: 'await fetch(url, { method, headers, body, signal, timeout, redirect, onProgress })', description: 'body acepta string, Uint8Array, Blob, FormData o URLSearchParams. Respuesta con text(), json(), bytes(), arrayBuffer(), blob().' },
+      { name: 'Net.download', signature: 'await Net.download(url, dest?, { headers, onProgress, signal })', description: 'Guarda directamente en disco sin cargar el archivo en memoria. Devuelve { path, status, size }.' },
+      { name: 'Net.upload', signature: 'await Net.upload(url, path, { method, headers, onProgress })', description: 'Sube un archivo leyéndolo desde disco.' },
+      { name: 'WebSocket', signature: 'new WebSocket(url, protocols?)', description: 'onopen, onmessage, onclose, onerror, send(text|bytes), close().' },
+      { name: 'AbortController', signature: 'new AbortController()', description: 'Cancela fetch y descargas con controller.abort().' },
+      { name: 'FormData', signature: 'fd.append(name, value) / fd.appendFile(name, path)', description: 'Formularios multipart con archivos.' },
+    ],
+  },
+  {
+    title: 'Archivos',
+    summary: 'Las rutas relativas parten de Documents, que se ve en la app Archivos en "En mi iPhone > Scriptor".',
+    items: [
+      { name: 'FS.readText', signature: 'FS.readText(path) / FS.readJSON(path)', description: 'Lee texto o JSON.' },
+      { name: 'FS.readBytes', signature: 'FS.readBytes(path, offset?, length?)', description: 'Lee bytes; con offset y length lee solo un trozo.' },
+      { name: 'FS.writeText', signature: 'FS.writeText / writeJSON / writeBytes(path, data)', description: 'Escribe creando las carpetas que falten.' },
+      { name: 'FS.appendText', signature: 'FS.appendText / appendBytes(path, data)', description: 'Añade al final sin reescribir el archivo.' },
+      { name: 'FS.list', signature: 'FS.list(dir) / FS.stat(path) / FS.exists / FS.isDir', description: 'Explorar carpetas y metadatos.' },
+      { name: 'FS.move', signature: 'FS.move / FS.copy(from, to) / FS.remove(path) / FS.mkdir(dir)', description: 'Operaciones de archivos.' },
+      { name: 'FS.zip', signature: 'await FS.zip(folder, dest?)', description: 'Comprime una carpeta en .zip.' },
+      { name: 'FS.pickFile', signature: 'await FS.pickFile({ types }) / FS.pickFiles({ types, multiple })', description: 'Selector de Archivos; devuelve copias locales.' },
+      { name: 'FS.pickFolder', signature: "await FS.pickFolder('nombre')", description: 'Elige una carpeta de cualquier sitio (iCloud, USB) y la recuerda para siempre.' },
+      { name: 'FS.bookmark', signature: "FS.bookmark('nombre'): path", description: 'Ruta de una carpeta recordada, accesible desde cualquier ejecución.' },
+      { name: 'FS.exportFile', signature: 'await FS.exportFile(path|paths)', description: 'Guarda una copia donde el usuario elija en Archivos.' },
+      { name: 'FS.documents', signature: 'FS.documents / FS.cache / FS.temp / FS.library', description: 'Carpetas base de la app.' },
+    ],
+  },
+  {
+    title: 'Fotos y cámara',
+    summary: 'Imágenes y vídeos como archivos: todo devuelve rutas.',
+    items: [
+      { name: 'Photos.save', signature: "await Photos.save(path, { album? }): id", description: 'Guarda una imagen o un VÍDEO en el carrete, opcionalmente en un álbum.' },
+      { name: 'Photos.pick', signature: "await Photos.pick({ type: 'image'|'video'|'any', limit })", description: 'Selector de fotos; devuelve [{ path, type, filename, id }].' },
+      { name: 'Photos.latest', signature: "await Photos.latest({ type, limit, album, favorites })", description: "Últimos elementos (type admite 'screenshot'). Devuelve metadatos, fecha y ubicación." },
+      { name: 'Photos.export', signature: 'await Photos.export(id, dest?)', description: 'Copia el archivo original (HEIC, MOV, RAW...) a una ruta.' },
+      { name: 'Photos.albums', signature: 'await Photos.albums() / Photos.createAlbum(title)', description: 'Lista y crea álbumes.' },
+      { name: 'Photos.delete', signature: 'await Photos.delete(ids)', description: 'Borra elementos; iOS pide confirmación.' },
+      { name: 'Photos.metadata', signature: 'Photos.metadata(path)', description: 'EXIF, GPS y TIFF de cualquier imagen.' },
+      { name: 'Camera.photo', signature: 'await Camera.photo({ front }) / Camera.video({ maxDuration, front })', description: 'Hace una foto o graba un vídeo y devuelve la ruta.' },
+    ],
+  },
+  {
+    title: 'Imagen, vídeo y audio',
+    summary: 'Procesado nativo con ImageIO y AVFoundation.',
+    items: [
+      { name: 'Image.resize', signature: "await Image.resize(path, { width, height, format, quality, dest })", description: 'Reduce sin cargar la imagen completa en memoria. format: jpeg, png, heic.' },
+      { name: 'Image.crop', signature: 'await Image.crop(path, { x, y, width, height })', description: 'Recorta.' },
+      { name: 'Image.convert', signature: "await Image.convert(path, 'png'|{ format, quality, dest })", description: 'Convierte de formato.' },
+      { name: 'Image.info', signature: 'Image.info(path)', description: 'Ancho, alto, tipo y número de fotogramas (GIF).' },
+      { name: 'Video.info', signature: 'await Video.info(path)', description: 'Duración, tamaño, fps, si tiene audio.' },
+      { name: 'Video.thumbnail', signature: 'await Video.thumbnail(path, { time, maxSize })', description: 'Fotograma como imagen.' },
+      { name: 'Video.export', signature: "await Video.export(path, { quality, start, end, dest, onProgress })", description: 'Comprime o recorta. quality: low, medium, high, hevc, 720p, 1080p, 4k, passthrough.' },
+      { name: 'Video.extractAudio', signature: 'await Video.extractAudio(path, dest?)', description: 'Saca el audio a .m4a.' },
+      { name: 'Audio.play', signature: 'await Audio.play(path, { volume, loop, rate })', description: 'Reproduce y espera a que termine. Audio.stop() para.' },
+      { name: 'Audio.record', signature: 'await Audio.record(dest?, { duration })', description: 'Graba del micrófono a .m4a.' },
+      { name: 'Speech.speak', signature: "await Speech.speak(text, { language: 'es-ES', rate, pitch })", description: 'Lee texto en voz alta.' },
+    ],
+  },
+  {
+    title: 'Interfaz y sistema',
+    summary: 'Diálogos nativos, compartir, portapapeles, notificaciones y datos del dispositivo.',
+    items: [
+      { name: 'alert', signature: 'await alert(message, title?)', description: 'También confirm(message) y prompt(message, value).' },
+      { name: 'UI.alert', signature: 'await UI.alert(title, message, { buttons, cancel, destructive, fields })', description: 'Alerta completa con campos de texto. Devuelve { index, values }.' },
+      { name: 'UI.menu', signature: 'await UI.menu(title, options): index', description: 'Hoja de opciones; -1 si se cancela.' },
+      { name: 'UI.share', signature: 'await UI.share(items)', description: 'Hoja de compartir con textos, URLs o archivos.' },
+      { name: 'UI.preview', signature: 'await UI.preview(path|paths)', description: 'Quick Look: ve vídeos, PDFs, imágenes y documentos.' },
+      { name: 'UI.haptic', signature: "UI.haptic('success'|'warning'|'error'|'light'|'medium'|'heavy'|'selection')", description: 'Vibración.' },
+      { name: 'UI.open', signature: 'await UI.open(url)', description: 'Abre una URL o un esquema de otra app (shortcuts://...).' },
+      { name: 'Pasteboard.text', signature: 'Pasteboard.text / Pasteboard.copy(text)', description: 'Texto del portapapeles.' },
+      { name: 'Pasteboard.copyFile', signature: 'Pasteboard.copyFile(path) / Pasteboard.pasteFile(dest?)', description: 'Copia y pega archivos de cualquier tipo, vídeos incluidos.' },
+      { name: 'Notify.schedule', signature: 'await Notify.schedule({ title, body, at, in, attachment, id })', description: 'Notificación local, con imagen o vídeo adjunto.' },
+      { name: 'Device.info', signature: 'Device.info()', description: 'Batería, modo bajo consumo, pantalla, idioma, disco libre, memoria.' },
+      { name: 'Keychain.set', signature: 'Keychain.set(key, value) / get(key) / remove(key)', description: 'Guarda secretos (tokens, claves) cifrados.' },
+    ],
+  },
+];
+
+export const COMPLETIONS: { label: string; detail: string; info: string }[] = API_DOCS.flatMap((section) =>
+  section.items.map((item) => ({ label: item.name, detail: item.signature, info: item.description })),
+);

@@ -1,98 +1,132 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, Stack, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActionSheetIOS, Alert, FlatList, Pressable, PlatformColor, StyleSheet, Text, View } from 'react-native';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { IconButton } from '@/components/icon-button';
+import {
+  deleteScript,
+  isValidName,
+  listScripts,
+  NEW_SCRIPT,
+  readScript,
+  renameScript,
+  uniqueName,
+  writeScript,
+  type ScriptFile,
+} from '@/lib/scripts';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+const dateFormat = new Intl.DateTimeFormat('es', { dateStyle: 'medium', timeStyle: 'short' });
+
+function askName(title: string, initial: string, onDone: (name: string) => void) {
+  Alert.prompt(title, undefined, (value) => {
+    const name = value?.trim();
+    if (!name) return;
+    if (!isValidName(name)) return Alert.alert('Nombre no válido', 'No uses / \\ : * ? " < > |');
+    onDone(name);
+  }, 'plain-text', initial);
 }
 
-export default function HomeScreen() {
+export default function ScriptsScreen() {
+  const [scripts, setScripts] = useState<ScriptFile[]>([]);
+  const refresh = useCallback(() => setScripts(listScripts()), []);
+  useFocusEffect(refresh);
+
+  const create = () => {
+    askName('Nuevo script', uniqueName('Sin título'), (name) => {
+      if (scripts.some((s) => s.name === name)) return Alert.alert('Ya existe un script con ese nombre');
+      writeScript(name, NEW_SCRIPT);
+      router.push({ pathname: '/script/[name]', params: { name } });
+    });
+  };
+
+  const showActions = (script: ScriptFile) => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: script.name,
+        options: ['Ejecutar', 'Renombrar', 'Duplicar', 'Eliminar', 'Cancelar'],
+        destructiveButtonIndex: 3,
+        cancelButtonIndex: 4,
+      },
+      (i) => {
+        try {
+          if (i === 0) router.push({ pathname: '/run/[name]', params: { name: script.name } });
+          if (i === 1) {
+            askName('Renombrar', script.name, (to) => {
+              try {
+                renameScript(script.name, to);
+                refresh();
+              } catch (e) {
+                Alert.alert('No se pudo renombrar', String(e));
+              }
+            });
+          }
+          if (i === 2) {
+            writeScript(uniqueName(`${script.name} copia`), readScript(script.name));
+            refresh();
+          }
+          if (i === 3) {
+            Alert.alert(`¿Eliminar "${script.name}"?`, 'No se puede deshacer.', [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Eliminar', style: 'destructive', onPress: () => { deleteScript(script.name); refresh(); } },
+            ]);
+          }
+        } catch (e) {
+          Alert.alert('Error', String(e));
+        }
+      },
+    );
+  };
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+    <>
+      <Stack.Screen
+        options={{
+          headerLeft: () => <IconButton name="book" label="Documentación" onPress={() => router.push('/docs')} />,
+          headerRight: () => <IconButton name="plus" label="Nuevo script" onPress={create} />,
+        }}
+      />
+      <FlatList
+        contentInsetAdjustmentBehavior="automatic"
+        data={scripts}
+        keyExtractor={(s) => s.name}
+        onRefresh={refresh}
+        refreshing={false}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListEmptyComponent={<Text style={styles.empty}>No hay scripts. Pulsa + para crear uno.</Text>}
+        renderItem={({ item }) => (
+          <Pressable
+            onPress={() => router.push({ pathname: '/script/[name]', params: { name: item.name } })}
+            onLongPress={() => showActions(item)}
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+            <View style={styles.rowText}>
+              <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
+              <Text style={styles.meta}>{dateFormat.format(item.modified)}</Text>
+            </View>
+            <IconButton
+              name="play.fill"
+              label={`Ejecutar ${item.name}`}
+              onPress={() => router.push({ pathname: '/run/[name]', params: { name: item.name } })}
+            />
+          </Pressable>
+        )}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  row: {
     flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
     alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+    backgroundColor: PlatformColor('systemBackground'),
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  pressed: { backgroundColor: PlatformColor('systemGray5') },
+  rowText: { flex: 1, gap: 2 },
+  name: { fontSize: 17, color: PlatformColor('label') },
+  meta: { fontSize: 13, color: PlatformColor('secondaryLabel') },
+  separator: { height: StyleSheet.hairlineWidth, marginLeft: 16, backgroundColor: PlatformColor('separator') },
+  empty: { textAlign: 'center', marginTop: 48, color: PlatformColor('secondaryLabel') },
 });

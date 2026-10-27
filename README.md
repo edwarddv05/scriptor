@@ -1,56 +1,66 @@
-# Welcome to your Expo app 👋
+# Scriptor
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Scriptor ejecuta scripts de JavaScript en iOS con acceso a APIs nativas, en la línea de Scriptable pero sin sus límites técnicos. Está pensada para instalarse por sideload: un solo App ID, sin widgets ni extensiones, y funciona con una cuenta gratuita de Apple.
 
-## Get started
+## Qué mejora respecto a Scriptable
 
-1. Install dependencies
+| Scriptable | Scriptor |
+|---|---|
+| `Photos.save()` solo acepta imágenes | `Photos.save(path)` guarda imágenes **y vídeos**, también en un álbum concreto |
+| Sin `setTimeout`, `fetch`, `atob`, `TextEncoder`, `URL` ni `crypto` | Incluye todas esas APIs web, además de AES-GCM y HMAC |
+| `Request` carga la respuesta entera en memoria y no informa del progreso | `Net.download` y `Net.upload` trabajan por streaming a disco, con progreso y cancelación; también hay WebSocket |
+| Sin EXIF, álbumes ni originales | `Photos.metadata`, `Photos.albums`, `Photos.export` (originales HEIC/MOV) |
+| Sin vídeo ni audio | `Video.export` (comprimir/recortar), `Video.thumbnail`, `Audio.play`, `Audio.record`, `Camera.video` |
+| Portapapeles solo para texto e imagen | `Pasteboard.copyFile` / `pasteFile` con cualquier tipo de archivo |
+| Leer archivos siempre completos | `FS.readBytes(path, offset, length)`, `FS.appendText`, `FS.zip` |
+| Carpetas externas solo mediante marcadores | `FS.pickFolder('nombre')` recuerda una carpeta para todas las ejecuciones |
+| Un bucle infinito bloquea la app | El botón Detener interrumpe incluso un `while (true)` |
 
-   ```bash
-   npm install
-   ```
+La referencia completa está dentro de la app (botón 📖) y en [src/lib/api-docs.ts](src/lib/api-docs.ts).
 
-2. Start the app
+## Cómo funciona
 
-   ```bash
-   npx expo start
-   ```
+- **Motor** ([modules/script-engine/ios](modules/script-engine/ios)): un módulo nativo de Expo en Swift. Cada ejecución crea su propio `JSContext` de JavaScriptCore en una cola dedicada, así que los scripts no comparten memoria con la app ni entre sí.
+  - Las funciones nativas se registran por nombre en `NativeRegistry` y se agrupan por archivo: `FileAPI`, `NetAPI`, `PhotosAPI`, `MediaAPI`, `UIAPI`, `CryptoAPI` y `CoreAPI`.
+  - Los datos binarios pasan como `Uint8Array` sin convertirse a base64.
+- **Runtime JS** ([modules/script-engine/js/prelude.js](modules/script-engine/js/prelude.js)): define las APIs que ven los scripts encima del puente nativo.
+  - `npm run prelude` lo convierte en `Prelude.swift`.
+  - `npm run test:prelude` lo prueba en Node simulando el puente.
+- **Interfaz** (Expo Router, [src/app](src/app)): lista de scripts, editor CodeMirror 6 sin conexión dentro de una WebView (`npm run editor` lo empaqueta), consola y documentación.
+- **Scripts:** son archivos `.js` en Documents. Se ven en la app Archivos, en *En mi iPhone › Scriptor*. Los módulos para `require()` van en `Documents/modules`.
+- **Ejecutar desde fuera:** `scriptor://run/NombreDelScript?clave=valor` ejecuta un script desde Atajos o Safari, y los parámetros llegan en `Script.input`.
 
-In the output, you'll find options to open the app in a
+## Compilar sin Mac (GitHub Actions)
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+1. Crea un repositorio en GitHub y sube esta carpeta (`app/`) como raíz del repositorio.
+2. Ve a **Actions › iOS IPA › Run workflow**:
+   - **Release:** app independiente. Es la que usarás normalmente.
+   - **Debug:** app de desarrollo que carga el JavaScript desde tu PC con `npx expo start`. Así los cambios de interfaz se ven al momento sin volver a compilar. Los cambios en Swift sí requieren compilar de nuevo.
+3. Cuando termine, que tarda unos 15-25 minutos, descarga el artefacto `Scriptor-Release-ipa`.
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Cada push a `main` también lanza una compilación Release.
 
-## Get a fresh project
+## Instalar con cuenta gratuita
 
-When you're ready, run:
+1. Instala [Sideloadly](https://sideloadly.io) en Windows. También necesitas iTunes e iCloud en sus versiones de escritorio, no las de Microsoft Store.
+2. Conecta el iPhone, arrastra el `.ipa`, escribe tu Apple ID y pulsa Start.
+3. En el iPhone:
+   - activa **Ajustes › Privacidad y seguridad › Modo de desarrollador**;
+   - confía en tu perfil en **Ajustes › General › VPN y gestión de dispositivos**.
+
+Límites de la cuenta gratuita:
+
+- La firma caduca a los **7 días**. Vuelve a instalar con Sideloadly; tus scripts se conservan. AltStore o SideStore pueden renovarla automáticamente.
+- Como mucho 3 apps instaladas a la vez y 10 App IDs por semana. Scriptor usa solo uno.
+- No hay iCloud, push ni App Groups. Por eso los scripts se guardan en la carpeta local de la app y no en iCloud Drive.
+
+## Desarrollo
 
 ```bash
-npm run reset-project
+npm install
+npm run test:prelude   # pruebas del runtime JS
+npm run prelude        # tras editar prelude.js
+npm run editor         # tras editar editor/main.js o api-docs.ts
+npm run typecheck
+npx expo lint
 ```
-
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
