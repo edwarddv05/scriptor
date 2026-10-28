@@ -14,6 +14,8 @@
       "supportsTablet": true,
       "deploymentTarget": "16.4",
       "infoPlist": {
+        "CFBundleDevelopmentRegion": "es",
+        "CFBundleLocalizations": ["es"],
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true,
         "NSPhotoLibraryUsageDescription": "Los scripts pueden leer fotos y vídeos de tu biblioteca.",

@@ -2,7 +2,8 @@ import ExpoModulesCore
 import UIKit
 
 final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegate {
-  let textView = CodeTextView()
+  // TextKit 1, so the line number gutter can read line fragments from the layout manager.
+  let textView = CodeTextView(usingTextLayoutManager: false)
   let onRunShortcut = EventDispatcher()
   var completions: [(label: String, detail: String)] = []
 
@@ -33,6 +34,7 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
     textView.alwaysBounceVertical = true
     textView.contentInsetAdjustmentBehavior = .always
     textView.textContainer.lineFragmentPadding = 0
+    // The left inset is set by the line number gutter.
     textView.textContainerInset = UIEdgeInsets(top: 12, left: 18, bottom: 160, right: 18)
     if #available(iOS 16.0, *) { textView.isFindInteractionEnabled = true }
     textView.onRun = { [weak self] in self?.onRunShortcut() }
@@ -75,6 +77,7 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
     textView.text = text
     bypassDelegate = false
     textView.undoManager?.removeAllActions()
+    textView.textChanged()
     dirty = false
   }
 
@@ -125,11 +128,22 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
   // MARK: Editing
 
   func textViewDidChange(_ textView: UITextView) {
+    self.textView.textChanged()
     scheduleSave()
     updateSuggestions()
   }
 
+  /// iOS only offers "Select All" with an empty selection; keep it when part of the text is selected.
+  func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+    guard range.length > 0, range.length < (textView.text as NSString).length else { return nil }
+    let selectAll = UIAction(title: "Seleccionar todo", image: UIImage(systemName: "selection.pin.in.out")) { [weak textView] _ in
+      textView?.selectAll(nil)
+    }
+    return UIMenu(children: suggestedActions + [selectAll])
+  }
+
   func textViewDidChangeSelection(_ textView: UITextView) {
+    self.textView.gutter.setNeedsDisplay()
     updateSuggestions()
   }
 
@@ -233,10 +247,43 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
   }
 }
 
-/// UITextView with hardware keyboard shortcuts for the editor.
+/// UITextView with a line number gutter and hardware keyboard shortcuts for the editor.
 final class CodeTextView: UITextView {
   var onRun: (() -> Void)?
   var onSave: (() -> Void)?
+  let gutter = LineNumberGutter()
+  private(set) var lineCount = 1
+
+  /// Recounts lines after an edit; the gutter widens when the count gains a digit.
+  func textChanged() {
+    let string = text as NSString
+    var count = 1
+    var index = 0
+    while index < string.length {
+      let found = string.range(of: "\n", range: NSRange(location: index, length: string.length - index))
+      if found.location == NSNotFound { break }
+      count += 1
+      index = found.location + 1
+    }
+    lineCount = count
+    setNeedsLayout()
+    gutter.setNeedsDisplay()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    if gutter.superview == nil {
+      gutter.textView = self
+      addSubview(gutter)
+    }
+    let digits = max(2, String(lineCount).count)
+    let width = ceil(CGFloat(digits) * gutter.digitWidth) + 20
+    if textContainerInset.left != width + 10 { textContainerInset.left = width + 10 }
+    // The gutter follows the scroll so it always covers the visible rows.
+    gutter.frame = CGRect(x: 0, y: contentOffset.y, width: width, height: bounds.height)
+    gutter.setNeedsDisplay()
+    bringSubviewToFront(gutter)
+  }
 
   override var keyCommands: [UIKeyCommand]? {
     let run = UIKeyCommand(title: "Ejecutar", action: #selector(runCommand), input: "r", modifierFlags: .command)
@@ -428,5 +475,83 @@ final class EditorAccessoryBar: UIInputView {
     button.heightAnchor.constraint(equalToConstant: 36).isActive = true
     button.widthAnchor.constraint(greaterThanOrEqualToConstant: 40).isActive = true
     return button
+  }
+}
+
+/// Line numbers beside the code. Wrapped lines get a number only on their first row.
+final class LineNumberGutter: UIView {
+  weak var textView: CodeTextView?
+
+  private var numberFont: UIFont {
+    UIFont.monospacedDigitSystemFont(ofSize: EditorTheme.font.pointSize * 0.82, weight: .regular)
+  }
+
+  var digitWidth: CGFloat { ("0" as NSString).size(withAttributes: [.font: numberFont]).width }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .systemBackground
+    contentMode = .redraw
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  override func draw(_ rect: CGRect) {
+    guard let textView else { return }
+    let layout = textView.layoutManager
+    let container = textView.textContainer
+    let string = textView.text as NSString
+    let inset = textView.textContainerInset
+    let offsetY = textView.contentOffset.y
+    let font = numberFont
+    let right = NSMutableParagraphStyle()
+    right.alignment = .right
+    let caretLine = lineNumber(at: textView.selectedRange.location, in: string)
+
+    func drawNumber(_ number: Int, fragment: CGRect) {
+      let current = number == caretLine
+      let attributes: [NSAttributedString.Key: Any] = [
+        .font: font, .paragraphStyle: right,
+        .foregroundColor: current ? UIColor.secondaryLabel : UIColor.tertiaryLabel,
+      ]
+      // Vertically centered on the code row, which is taller than the smaller number font.
+      let y = fragment.minY + inset.top - offsetY + (fragment.height - font.lineHeight) / 2
+      ("\(number)" as NSString).draw(in: CGRect(x: 0, y: y, width: bounds.width - 10, height: font.lineHeight), withAttributes: attributes)
+    }
+
+    let visible = CGRect(x: 0, y: offsetY - inset.top, width: textView.bounds.width, height: textView.bounds.height)
+    let glyphs = layout.glyphRange(forBoundingRect: visible, in: container)
+    let firstChar = layout.characterIndexForGlyph(at: glyphs.location)
+    var number = lineNumber(at: firstChar, in: string)
+    var first = true
+    layout.enumerateLineFragments(forGlyphRange: glyphs) { fragment, _, _, glyphRange, _ in
+      let start = layout.characterIndexForGlyph(at: glyphRange.location)
+      let startsLine = start == 0 || string.character(at: start - 1) == 10
+      if startsLine {
+        if !first { number += 1 }
+        drawNumber(number, fragment: fragment)
+      }
+      first = false
+    }
+    // The empty row after a trailing newline is not a line fragment of its own.
+    let extra = layout.extraLineFragmentRect
+    if !extra.isEmpty, extra.minY + inset.top - offsetY < bounds.height {
+      drawNumber(lineNumber(at: string.length, in: string), fragment: extra)
+    }
+  }
+
+  /// 1-based line of a character index (counts the newlines before it).
+  private func lineNumber(at index: Int, in string: NSString) -> Int {
+    var count = 1
+    var position = 0
+    let end = min(index, string.length)
+    while position < end {
+      let found = string.range(of: "\n", range: NSRange(location: position, length: end - position))
+      if found.location == NSNotFound { break }
+      count += 1
+      position = found.location + 1
+    }
+    return count
   }
 }
