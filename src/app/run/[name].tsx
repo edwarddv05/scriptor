@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -16,6 +17,8 @@ export default function RunScreen() {
   const [runId, setRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const run = useRun(runId);
+  // The header is translucent and overlaps the screen; the console starts below it.
+  const headerHeight = useHeaderHeight();
   const tint = useMemo(() => {
     const script = listScripts().find((s) => s.name === name);
     return scriptColors[colorFor(script ?? { name })][1];
@@ -52,11 +55,11 @@ export default function RunScreen() {
         </Stack.Toolbar>
       )}
       {error ? (
-        <View style={styles.center}>
+        <View style={[styles.center, { paddingTop: headerHeight }]}>
           <Text style={[type.body, styles.error]}>{error}</Text>
         </View>
       ) : (
-        <View style={styles.flex}>
+        <View style={[styles.flex, { paddingTop: headerHeight }]}>
           <RunStatus run={run} />
           <ConsoleView run={run} tint={tint} />
         </View>

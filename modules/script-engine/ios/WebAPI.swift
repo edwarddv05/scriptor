@@ -16,25 +16,19 @@ enum WebAPI {
   }
 
   /// Registers an async handler. `prepare` reads the arguments on the run's queue (JSValues must
-  /// not be touched from main); `body` then runs on main with the view. The call is tracked so
-  /// shouldAllowRequest events can be sent to it.
+  /// not be touched from main); `body` then runs on main with the view.
   private static func handle<P>(
     _ r: NativeRegistry, _ name: String, _ prepare: @escaping (Args) throws -> P,
     _ body: @escaping @MainActor (ScriptWeb, P, @escaping Completion) -> Void
   ) {
     r.async(name) { run, a, done in
       let id = a.int(0, 0)
-      let callId = a.callId
       let params: P
       do { params = try prepare(a) } catch { return done(.failure(error)) }
       DispatchQueue.main.async {
         do {
           let web = try view(run, id)
-          web.eventCalls.append(callId)
-          body(web, params) { result in
-            DispatchQueue.main.async { web.eventCalls.removeAll { $0 == callId } }
-            done(result)
-          }
+          body(web, params, done)
         } catch { done(.failure(error)) }
       }
     }
@@ -53,7 +47,7 @@ enum WebAPI {
       nextId += 1
       idLock.unlock()
       let key = "\(run.id)#\(id)"
-      DispatchQueue.main.async { views[key] = ScriptWeb(run: run) }
+      DispatchQueue.main.async { views[key] = ScriptWeb(run: run, id: id) }
       run.addCleanup("web.\(id)") {
         DispatchQueue.main.async { views.removeValue(forKey: key)?.destroy() }
       }
@@ -116,9 +110,9 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
 
 final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
   weak var run: ScriptRun?
+  /// The id the script's WebView object knows this view by.
+  let id: Int
   let webView: WKWebView
-  /// Pending async calls of this view; events (shouldAllowRequest) go to the latest one.
-  var eventCalls: [Int] = []
   var loadWaiters: [Completion] = []
   var filterEnabled = false
   private var decisions: [Int: (WKNavigationActionPolicy) -> Void] = [:]
@@ -148,8 +142,9 @@ final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     })();
     """
 
-  init(run: ScriptRun) {
+  init(run: ScriptRun, id: Int) {
     self.run = run
+    self.id = id
     let config = WKWebViewConfiguration()
     config.allowsInlineMediaPlayback = true
     config.mediaTypesRequiringUserActionForPlayback = []
@@ -253,14 +248,16 @@ final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
   ) {
-    guard filterEnabled, let run, let callId = eventCalls.last, let url = action.request.url else {
+    guard filterEnabled, let run, let url = action.request.url else {
       return decisionHandler(.allow)
     }
-    let id = nextDecision
+    // Sent straight to the view's object in the script, so a request is asked about even when
+    // no loadHTML/evaluateJavaScript call is pending (pages that signal with custom URLs).
+    let decision = nextDecision
     nextDecision += 1
-    decisions[id] = decisionHandler
-    run.emit(callId, [
-      "type": "request", "id": id, "url": url.absoluteString,
+    decisions[decision] = decisionHandler
+    run.invoke("__webRequest", id, [
+      "id": decision, "url": url.absoluteString,
       "method": action.request.httpMethod ?? "GET", "headers": action.request.allHTTPHeaderFields ?? [:],
     ])
   }

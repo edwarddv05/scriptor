@@ -33,11 +33,7 @@ export function setAppearance(script: ScriptFile, look: { color?: string; glyph?
   );
 }
 
-export const NEW_SCRIPT = `// Escribe tu script aquí. Puedes usar await y return en el nivel superior.
-const res = await fetch('https://httpbin.org/json');
-const data = await res.json();
-console.log(data);
-`;
+export const NEW_SCRIPT = '';
 
 const EXAMPLES: Record<string, string> = {
   Bienvenida: `// icon-color: deep-purple; icon-glyph: magic;

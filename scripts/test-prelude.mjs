@@ -52,7 +52,9 @@ const sync = {
   'draw.render': (spec) => { lastDraw = spec; return { path: '/tmp/x.png', width: spec.width, height: spec.height }; },
   'web.create': () => 1,
   'web.setFilter': () => {},
+  'web.decide': (view, id, allow) => decided.push([view, id, allow]),
 };
+const decided = [];
 let lastDraw = null;
 let lastHTML = null;
 let lastAlert = null;
@@ -241,6 +243,15 @@ const tests = {
     assert.match(lastHTML, /Hola &lt;b&gt;/);
     assert.match(lastHTML, /rgba\(18,52,86,1\)/);
     assert.match(lastHTML, /data-style="timer"/);
+  },
+  'WebView shouldAllowRequest without a pending call': async () => {
+    await run('webfilter', `
+      const wv = new WebView();
+      wv.shouldAllowRequest = (req) => !req.url.startsWith('bridge://');`);
+    ctx.__webRequest(1, { id: 7, url: 'bridge://kick/1', method: 'GET', headers: {} });
+    ctx.__webRequest(1, { id: 8, url: 'https://example.com/', method: 'GET', headers: {} });
+    ctx.__webRequest(99, { id: 9, url: 'https://example.com/', method: 'GET', headers: {} });
+    assert.deepEqual(decided, [[1, 7, false], [1, 8, true], [99, 9, true]]);
   },
   'Scriptable XMLParser, Timer, misc': async () => {
     const v = await run('xml', `

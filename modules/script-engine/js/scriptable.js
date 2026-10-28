@@ -454,23 +454,29 @@
 
     // ---------------------------------------------------------------- WebView
 
+    // Views by id, so native can ask a view's shouldAllowRequest at any time.
+    const webViews = new Map();
+    global.__webRequest = (viewId, e) => {
+      const view = webViews.get(viewId);
+      if (view) view._decide(e);
+      else callSync('web.decide', viewId, e.id, true);
+    };
+
     class WebView {
-      constructor() { this._id = callSync('web.create'); this._filter = null; }
+      constructor() { this._id = callSync('web.create'); this._filter = null; webViews.set(this._id, this); }
       get shouldAllowRequest() { return this._filter; }
       set shouldAllowRequest(fn) { this._filter = typeof fn === 'function' ? fn : null; callSync('web.setFilter', this._id, !!this._filter); }
-      _call(name, args) {
-        return callAsync(name, [this._id, ...args], (e) => {
-          if (e.type !== 'request') return;
-          let allow = true;
-          try {
-            const req = new Request(e.url);
-            req.method = e.method;
-            req.headers = e.headers || {};
-            allow = this._filter ? this._filter(req) !== false : true;
-          } catch (err) { console.error(err); }
-          callSync('web.decide', this._id, e.id, !!allow);
-        });
+      _decide(e) {
+        let allow = true;
+        try {
+          const req = new Request(e.url);
+          req.method = e.method;
+          req.headers = e.headers || {};
+          allow = this._filter ? this._filter(req) !== false : true;
+        } catch (err) { console.error(err); }
+        callSync('web.decide', this._id, e.id, !!allow);
       }
+      _call(name, args) { return callAsync(name, [this._id, ...args]); }
       loadURL(url) { return this._call('web.loadURL', [String(url)]).then(() => undefined); }
       loadRequest(request) {
         const headers = new Headers(request.headers || {});

@@ -131,6 +131,14 @@ final class ScriptRun {
     }
   }
 
+  /// Calls a global JS function with an event that is not tied to a pending call (WebView requests).
+  func invoke(_ fn: String, _ id: Int, _ value: Any?) {
+    queue.async { [self] in
+      guard !finished else { return }
+      call(fn, [id, JSConvert.toJS(value, in: context)])
+    }
+  }
+
   func setTimer(id: Int, ms: Double, repeats: Bool) {
     timers[id]?.cancel()
     let timer = DispatchSource.makeTimerSource(queue: queue)
