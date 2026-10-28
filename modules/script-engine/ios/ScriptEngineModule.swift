@@ -64,11 +64,13 @@ public class ScriptEngineModule: Module {
         .filter { $0.pathExtension.lowercased() == "js" }
         .map { url in
           let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-          return [
+          var item: [String: Any] = [
             "name": url.deletingPathExtension().lastPathComponent,
             "modified": (values?.contentModificationDate ?? Date()).timeIntervalSince1970 * 1000,
             "size": values?.fileSize ?? 0,
           ]
+          item.merge(ScriptHeader.read(url)) { _, new in new }
+          return item
         }
     }
 
@@ -130,5 +132,36 @@ enum Paths {
     try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try? FileManager.default.removeItem(at: url)
     return url
+  }
+}
+
+/// Reads the start of a script for the list: Scriptable's `// icon-color: x; icon-glyph: y;`
+/// header and the first ordinary comment line as a summary.
+enum ScriptHeader {
+  static func read(_ url: URL) -> [String: Any] {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return [:] }
+    defer { try? handle.close() }
+    let data = (try? handle.read(upToCount: 2048)) ?? Data()
+    let head = String(decoding: data, as: UTF8.self)
+    var result: [String: Any] = [:]
+    for line in head.split(separator: "\n", omittingEmptySubsequences: true).prefix(12) {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      guard trimmed.hasPrefix("//") else {
+        if !trimmed.isEmpty { break } else { continue }
+      }
+      let body = trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
+      if body.contains("icon-color:") || body.contains("icon-glyph:") {
+        for part in body.split(separator: ";") {
+          let pair = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+          guard pair.count == 2 else { continue }
+          if pair[0] == "icon-color" { result["color"] = pair[1] }
+          if pair[0] == "icon-glyph" { result["glyph"] = pair[1] }
+        }
+      } else if result["summary"] == nil, !body.isEmpty,
+                !body.hasPrefix("Variables used by Scriptable"), !body.hasPrefix("These must be at the very top") {
+        result["summary"] = body
+      }
+    }
+    return result
   }
 }

@@ -9,7 +9,7 @@ export default function RootLayout() {
   const scheme = useColorScheme();
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
+      <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Screen name="index" options={{ title: 'Scripts', headerLargeTitle: true }} />
         <Stack.Screen name="script/[name]" options={{ title: '' }} />
         <Stack.Screen name="docs" options={{ title: 'Documentación', presentation: 'modal' }} />

@@ -20,6 +20,19 @@ export function uniqueName(base: string): string {
   return `${base} ${i}`;
 }
 
+const HEADER = /^(\/\/ Variables used by Scriptable\.\n)?(\/\/ These must be at the very top of the file\. Do not edit\.\n)?\/\/ icon-color:[^\n]*\n/;
+
+/** Writes Scriptable's color/glyph header, so the script keeps its look in Scriptable too. */
+export function setAppearance(script: ScriptFile, look: { color?: string; glyph?: string }) {
+  const color = look.color ?? script.color ?? 'blue';
+  const glyph = look.glyph ?? script.glyph ?? 'code';
+  const body = readScript(script.name).replace(HEADER, '');
+  writeScript(
+    script.name,
+    `// Variables used by Scriptable.\n// These must be at the very top of the file. Do not edit.\n// icon-color: ${color}; icon-glyph: ${glyph};\n${body}`,
+  );
+}
+
 export const NEW_SCRIPT = `// Escribe tu script aquí. Puedes usar await y return en el nivel superior.
 const res = await fetch('https://httpbin.org/json');
 const data = await res.json();
@@ -27,7 +40,8 @@ console.log(data);
 `;
 
 const EXAMPLES: Record<string, string> = {
-  Bienvenida: `// Un recorrido rápido por lo que puede hacer Scriptor.
+  Bienvenida: `// icon-color: deep-purple; icon-glyph: magic;
+// Un recorrido rápido por lo que puede hacer Scriptor.
 const info = Device.info();
 console.log('Dispositivo:', info.model, 'iOS', info.systemVersion);
 console.log('Batería:', Math.round(info.battery * 100) + '%', info.batteryState);
@@ -46,7 +60,8 @@ console.log(FS.list('ejemplo'));
 const nombre = await prompt('¿Cómo te llamas?');
 if (nombre) await alert('Hola, ' + nombre + ' 👋');
 `,
-  'Guardar video en carrete': `// Descarga un vídeo en streaming (sin cargarlo en memoria) y lo guarda en Fotos.
+  'Guardar video en carrete': `// icon-color: blue; icon-glyph: download;
+// Descarga un vídeo en streaming (sin cargarlo en memoria) y lo guarda en Fotos.
 const url = await prompt('URL del vídeo (.mp4)', 'https://download.samplelib.com/mp4/sample-5s.mp4');
 if (!url) return;
 
@@ -59,7 +74,8 @@ const id = await Photos.save(file.path, { album: 'Scriptor' });
 console.log('En el carrete con id', id);
 UI.haptic('success');
 `,
-  'Comprimir video': `// Elige un vídeo, lo comprime a 720p y lo guarda en el carrete.
+  'Comprimir video': `// icon-color: orange; icon-glyph: video;
+// Elige un vídeo, lo comprime a 720p y lo guarda en el carrete.
 const [video] = await Photos.pick({ type: 'video' });
 if (!video) return;
 

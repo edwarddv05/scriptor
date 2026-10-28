@@ -32,7 +32,10 @@ La referencia completa está dentro de la app (botón 📖) y en [src/lib/api-do
 - **Runtime JS** ([modules/script-engine/js/prelude.js](modules/script-engine/js/prelude.js)): define las APIs que ven los scripts encima del puente nativo.
   - `npm run prelude` lo convierte en `Prelude.swift`.
   - `npm run test:prelude` lo prueba en Node simulando el puente.
-- **Interfaz** (Expo Router, [src/app](src/app)): lista de scripts, editor CodeMirror 6 sin conexión dentro de una WebView (`npm run editor` lo empaqueta), consola y documentación.
+- **Interfaz** (Expo Router, [src/app](src/app)): rejilla de scripts, editor, consola y documentación, con Liquid Glass en iOS 26. Los colores, iconos y espaciados están en [src/theme.ts](src/theme.ts).
+  - **Editor nativo** ([ScriptEditorView.swift](modules/script-engine/ios/ScriptEditorView.swift)): un `UITextView` con resaltado de JavaScript, autoindentado, cierre de paréntesis, autocompletado de la API y buscar/reemplazar. Lee y guarda el archivo él mismo. Con teclado físico, ⌘R ejecuta y ⌘S guarda.
+  - **Color e icono de cada script:** se guardan en la cabecera de Scriptable (`// icon-color: blue; icon-glyph: code;`), así que se conservan si el script vuelve a Scriptable. Se cambian manteniendo pulsado el script.
+  - **iPad:** la rejilla añade columnas según el ancho, y en el editor la consola y la documentación se abren en una columna lateral.
 - **Scripts:** son archivos `.js` en Documents. Se ven en la app Archivos, en *En mi iPhone › Scriptor*. Los módulos para `require()` van en `Documents/modules`.
 - **Ejecutar desde fuera:** `scriptor://run/NombreDelScript?clave=valor` ejecuta un script desde Atajos o Safari, y los parámetros llegan en `Script.input`.
 
@@ -66,7 +69,6 @@ Límites de la cuenta gratuita:
 npm install
 npm run test:prelude   # pruebas del runtime JS
 npm run prelude        # tras editar prelude.js
-npm run editor         # tras editar editor/main.js o api-docs.ts
 npm run typecheck
 npx expo lint
 ```

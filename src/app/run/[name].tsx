@@ -1,11 +1,11 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { PlatformColor, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { ConsoleView } from '@/components/console-view';
-import { IconButton } from '@/components/icon-button';
+import { ConsoleView, RunStatus } from '@/components/console-view';
 import { startRun, stopRun, useRun } from '@/lib/runner';
-import { readScript } from '@/lib/scripts';
+import { listScripts, readScript } from '@/lib/scripts';
+import { colorFor, colors, scriptColors, spacing, type } from '@/theme';
 
 /**
  * Runs a script and shows its console. Also the target of scriptor://run/<name>?key=value,
@@ -16,6 +16,10 @@ export default function RunScreen() {
   const [runId, setRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const run = useRun(runId);
+  const tint = useMemo(() => {
+    const script = listScripts().find((s) => s.name === name);
+    return scriptColors[colorFor(script ?? { name })][1];
+  }, [name]);
 
   // Starting the run is the external side effect; its id is stored to follow the logs.
   // Runs once per opened screen.
@@ -24,36 +28,45 @@ export default function RunScreen() {
     try {
       setRunId(startRun(name, readScript(name), params));
     } catch {
-      setError(`No existe el script "${name}".`);
+      setError(`No existe el script «${name}». Revisa el nombre en el atajo o el enlace.`);
     }
   }, [name]);
   /* eslint-enable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: name,
-          headerRight: () =>
-            run?.status === 'running' ? (
-              <IconButton name="stop.fill" label="Detener" tint={PlatformColor('systemRed')} onPress={() => stopRun(runId!)} />
-            ) : (
-              <IconButton name="arrow.clockwise" label="Repetir" onPress={() => setRunId(startRun(name, readScript(name), params))} />
-            ),
-        }}
-      />
+      <Stack.Screen options={{ title: name }} />
+      {!error && (
+        <Stack.Toolbar placement="right">
+          {run?.status === 'running' ? (
+            <Stack.Toolbar.Button icon="stop.fill" accessibilityLabel="Detener" variant="prominent" tintColor={colors.danger} onPress={() => stopRun(runId!)} />
+          ) : (
+            <Stack.Toolbar.Button
+              icon="arrow.clockwise"
+              accessibilityLabel="Ejecutar de nuevo"
+              variant="prominent"
+              tintColor={tint}
+              onPress={() => setRunId(startRun(name, readScript(name), params))}
+            />
+          )}
+        </Stack.Toolbar>
+      )}
       {error ? (
         <View style={styles.center}>
-          <Text style={styles.error}>{error}</Text>
+          <Text style={[type.body, styles.error]}>{error}</Text>
         </View>
       ) : (
-        <ConsoleView run={run} />
+        <View style={styles.flex}>
+          <RunStatus run={run} />
+          <ConsoleView run={run} tint={tint} />
+        </View>
       )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  error: { color: PlatformColor('systemRed'), fontSize: 16, textAlign: 'center' },
+  flex: { flex: 1 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  error: { color: colors.danger, textAlign: 'center' },
 });

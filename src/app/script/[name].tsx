@@ -1,33 +1,43 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
-import { useEffect, useRef, useState, type ComponentType, type Ref } from 'react';
-import { Keyboard, KeyboardAvoidingView, PlatformColor, Pressable, StyleSheet, Text, View } from 'react-native';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import type { IOSWebViewProps } from 'react-native-webview/lib/WebViewTypes';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ConsoleView } from '@/components/console-view';
-import { IconButton } from '@/components/icon-button';
-import { KeyBar } from '@/components/key-bar';
-import { EDITOR_HTML } from '@/editor/editor-html';
+import { ScriptEditor, type ScriptEditorRef } from '../../../modules/script-engine';
+import { ConsoleView, RunStatus } from '@/components/console-view';
+import { DocsList } from '@/components/docs-list';
+import { COMPLETIONS } from '@/lib/api-docs';
 import { startRun, stopRun, useRun } from '@/lib/runner';
-import { readScript, writeScript } from '@/lib/scripts';
+import { listScripts } from '@/lib/scripts';
+import { colorFor, colors, radius, scriptColors, spacing } from '@/theme';
 
-// react-native-webview's combined iOS/Android/Windows props collapse to `never` under this
-// TypeScript version, so type the component with the iOS props only (the app is iOS-only).
-const EditorWebView = WebView as unknown as ComponentType<IOSWebViewProps & { ref?: Ref<WebView> }>;
+const completions = COMPLETIONS.map(({ label, detail }) => ({ label, detail }));
+const liquidGlass = isLiquidGlassAvailable();
+
+type Panel = 'console' | 'docs' | null;
 
 export default function EditorScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
-  const web = useRef<WebView>(null);
-  const text = useRef<string>('');
-  const runAfterFlush = useRef(false);
+  const editor = useRef<ScriptEditorRef>(null);
   const [runId, setRunId] = useState<string | null>(null);
-  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
   const [keyboard, setKeyboard] = useState(false);
+  const [docsQuery, setDocsQuery] = useState('');
   const run = useRun(runId);
-  // The iOS header is translucent and overlaps the screen, so push the editor below it.
+  const insets = useSafeAreaInsets();
+  // The header is translucent and overlaps the screen; the side panel starts below it.
   const headerHeight = useHeaderHeight();
+  const { width } = useWindowDimensions();
+  // iPad (and wide split view) keeps the console or docs in a column beside the code.
+  const wide = width >= 740;
   const running = run?.status === 'running';
+
+  const tint = useMemo(() => {
+    const script = listScripts().find((s) => s.name === name);
+    return scriptColors[colorFor(script ?? { name })][1];
+  }, [name]);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', () => setKeyboard(true));
@@ -38,102 +48,119 @@ export default function EditorScreen() {
     };
   }, []);
 
-  const js = (code: string) => web.current?.injectJavaScript(`${code}; true;`);
-
-  const execute = () => {
-    writeScript(name, text.current);
-    Keyboard.dismiss();
-    js('window.editorAPI.blur()');
-    setConsoleOpen(true);
-    setRunId(startRun(name, text.current));
+  const execute = async () => {
+    const source = await editor.current?.save();
+    if (source === undefined) return;
+    if (!wide) editor.current?.blur();
+    setPanel('console');
+    setRunId(startRun(name, source));
   };
 
-  const onMessage = (e: WebViewMessageEvent) => {
-    const msg = JSON.parse(e.nativeEvent.data) as { type: string; text?: string };
-    if (msg.type === 'ready') {
-      text.current = readScript(name);
-      js(`window.editorAPI.setText(${JSON.stringify(text.current)})`);
-    } else if (msg.type === 'change' && msg.text !== undefined) {
-      text.current = msg.text;
-      writeScript(name, msg.text);
-      if (runAfterFlush.current) {
-        runAfterFlush.current = false;
-        execute();
-      }
-    }
+  const toggle = (p: Exclude<Panel, null>) => {
+    if (p === 'docs' && !wide) return router.push('/docs');
+    setPanel((current) => (current === p ? null : p));
   };
 
-  // The editor batches changes; flush it first so the run uses the latest text.
-  const onRun = () => {
-    runAfterFlush.current = true;
-    js('window.editorAPI.flush()');
-  };
+  const panelContent =
+    panel === 'docs' ? (
+      <DocsList
+        query={docsQuery}
+        header={
+          <TextInput
+            style={styles.search}
+            placeholder="Buscar en la API"
+            placeholderTextColor={colors.tertiaryLabel}
+            value={docsQuery}
+            onChangeText={setDocsQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+          />
+        }
+      />
+    ) : (
+      <>
+        <RunStatus run={run} onClose={() => setPanel(null)} />
+        <ConsoleView run={run} tint={tint} />
+      </>
+    );
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: name,
-          headerRight: () => (
-            <View style={styles.header}>
-              <IconButton
-                name="terminal"
-                label="Consola"
-                onPress={() => setConsoleOpen((o) => !o)}
-                tint={consoleOpen ? PlatformColor('systemBlue') : PlatformColor('secondaryLabel')}
-              />
-              {running ? (
-                <IconButton name="stop.fill" label="Detener" tint={PlatformColor('systemRed')} onPress={() => stopRun(runId!)} />
-              ) : (
-                <IconButton name="play.fill" label="Ejecutar" onPress={onRun} />
-              )}
-            </View>
-          ),
-        }}
-      />
-      <KeyboardAvoidingView style={[styles.flex, { paddingTop: headerHeight }]} behavior="padding">
-        <EditorWebView
-          ref={web}
-          style={styles.flex}
-          originWhitelist={['*']}
-          source={{ html: EDITOR_HTML }}
-          onMessage={onMessage}
-          keyboardDisplayRequiresUserAction={false}
-          hideKeyboardAccessoryView
-          automaticallyAdjustContentInsets={false}
-          contentInsetAdjustmentBehavior="never"
-          bounces={false}
+      <Stack.Screen options={{ title: name, headerLargeTitle: false }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon="book"
+          accessibilityLabel="Documentación"
+          selected={panel === 'docs'}
+          onPress={() => toggle('docs')}
         />
-        {keyboard && <KeyBar onKey={(k) => js(`window.editorAPI.insert(${JSON.stringify(k)})`)} onHide={() => js('window.editorAPI.blur()')} />}
-        {consoleOpen && !keyboard && (
-          <View style={styles.console}>
-            <Pressable onPress={() => setConsoleOpen(false)} style={styles.consoleBar}>
-              <Text style={styles.consoleTitle}>Consola</Text>
-              <Text style={styles.consoleHint}>Ocultar</Text>
-            </Pressable>
-            <ConsoleView run={run} />
-          </View>
+        <Stack.Toolbar.Button
+          icon="text.alignleft"
+          accessibilityLabel="Consola"
+          selected={panel === 'console'}
+          onPress={() => toggle('console')}
+        />
+        {running ? (
+          <Stack.Toolbar.Button icon="stop.fill" accessibilityLabel="Detener" variant="prominent" tintColor={colors.danger} onPress={() => stopRun(runId!)} />
+        ) : (
+          <Stack.Toolbar.Button icon="play.fill" accessibilityLabel="Ejecutar" variant="prominent" tintColor={tint} onPress={execute} />
         )}
-      </KeyboardAvoidingView>
+      </Stack.Toolbar>
+
+      <View style={styles.row}>
+        <ScriptEditor
+          ref={editor}
+          style={styles.flex}
+          scriptName={name}
+          completions={completions}
+          tint={tint}
+          onRunShortcut={execute}
+        />
+        {wide && panel && <View style={[styles.side, { paddingTop: headerHeight }]}>{panelContent}</View>}
+      </View>
+
+      {!wide && panel === 'console' && !keyboard && (
+        <GlassView
+          glassEffectStyle="regular"
+          style={[styles.sheet, { bottom: Math.max(insets.bottom, spacing.sm) }, !liquidGlass && styles.sheetFallback]}>
+          {panelContent}
+        </GlassView>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  header: { flexDirection: 'row', gap: 16, alignItems: 'center' },
-  console: {
+  row: { flex: 1, flexDirection: 'row', backgroundColor: colors.surface },
+  side: {
+    width: 360,
+    backgroundColor: colors.raised,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.separator,
+  },
+  sheet: {
+    position: 'absolute',
+    left: spacing.sm,
+    right: spacing.sm,
     height: '42%',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: PlatformColor('separator'),
+    borderRadius: radius.panel,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
   },
-  consoleBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  sheetFallback: {
+    backgroundColor: colors.raised,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+  },
+  search: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: PlatformColor('secondarySystemBackground'),
+    height: 38,
+    borderRadius: radius.sm,
+    fontSize: 16,
+    color: colors.label,
+    backgroundColor: colors.fill,
   },
-  consoleTitle: { fontWeight: '600', color: PlatformColor('label') },
-  consoleHint: { color: PlatformColor('systemBlue') },
 });
