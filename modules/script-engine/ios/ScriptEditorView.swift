@@ -2,8 +2,7 @@ import ExpoModulesCore
 import UIKit
 
 final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegate {
-  // TextKit 1, so the line number gutter can read line fragments from the layout manager.
-  let textView = CodeTextView(usingTextLayoutManager: false)
+  let textView = CodeTextView.make()
   let onRunShortcut = EventDispatcher()
   var completions: [(label: String, detail: String)] = []
 
@@ -253,6 +252,24 @@ final class CodeTextView: UITextView {
   var onSave: (() -> Void)?
   let gutter = LineNumberGutter()
   private(set) var lineCount = 1
+  /// A text view built on a container does not own its text storage.
+  private var ownedStorage: NSTextStorage?
+
+  /// A TextKit 1 text view, assembled by hand so the gutter can read line fragments from its
+  /// layout manager.
+  static func make() -> CodeTextView {
+    let storage = NSTextStorage()
+    let layout = NSLayoutManager()
+    storage.addLayoutManager(layout)
+    let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    container.widthTracksTextView = true
+    layout.addTextContainer(container)
+    let view = CodeTextView(frame: .zero, textContainer: container)
+    view.ownedStorage = storage
+    view.gutter.textView = view
+    view.addSubview(view.gutter)
+    return view
+  }
 
   /// Recounts lines after an edit; the gutter widens when the count gains a digit.
   func textChanged() {
@@ -272,17 +289,13 @@ final class CodeTextView: UITextView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    if gutter.superview == nil {
-      gutter.textView = self
-      addSubview(gutter)
-    }
     let digits = max(2, String(lineCount).count)
     let width = ceil(CGFloat(digits) * gutter.digitWidth) + 20
     if textContainerInset.left != width + 10 { textContainerInset.left = width + 10 }
     // The gutter follows the scroll so it always covers the visible rows.
     gutter.frame = CGRect(x: 0, y: contentOffset.y, width: width, height: bounds.height)
     gutter.setNeedsDisplay()
-    bringSubviewToFront(gutter)
+    if subviews.last !== gutter { bringSubviewToFront(gutter) }
   }
 
   override var keyCommands: [UIKeyCommand]? {
@@ -498,7 +511,7 @@ final class LineNumberGutter: UIView {
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
   override func draw(_ rect: CGRect) {
-    guard let textView else { return }
+    guard let textView, textView.window != nil else { return }
     let layout = textView.layoutManager
     let container = textView.textContainer
     let string = textView.text as NSString

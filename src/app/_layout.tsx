@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useColorScheme } from 'react-native';
 
 import { seedExamples } from '@/lib/scripts';
+import { colors } from '@/theme';
 
 seedExamples();
 
@@ -12,8 +13,15 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Screen name="index" options={{ title: 'Scripts', headerLargeTitle: true }} />
         <Stack.Screen name="script/[name]" options={{ title: '' }} />
-        <Stack.Screen name="docs" options={{ title: 'Documentación', presentation: 'modal' }} />
-        <Stack.Screen name="run/[name]" options={{ title: 'Ejecutar', presentation: 'modal' }} />
+        {/* Sheets use the raised background so they stand apart from the black screen behind. */}
+        <Stack.Screen
+          name="docs"
+          options={{ title: 'Documentación', presentation: 'modal', contentStyle: { backgroundColor: colors.raised } }}
+        />
+        <Stack.Screen
+          name="run/[name]"
+          options={{ title: 'Ejecutar', presentation: 'modal', contentStyle: { backgroundColor: colors.raised } }}
+        />
         <Stack.Screen
           name="x-callback/[...path]"
           options={{ headerShown: false, presentation: 'transparentModal', animation: 'none' }}
