@@ -40,6 +40,8 @@ enum TableAPI {
 final class TableScreenController: ScriptScreenController, UITableViewDataSource, UITableViewDelegate {
   private let tableView = UITableView(frame: .zero, style: .plain)
   private var rows: [[String: Any]] = []
+  /// UITable.glass (a Scriptor extra): rows as Liquid Glass cards on a grouped background.
+  private var glass = false
   private let onEvent: ([String: Any]) -> Void
 
   init(spec: [String: Any], onEvent: @escaping ([String: Any]) -> Void) {
@@ -52,17 +54,24 @@ final class TableScreenController: ScriptScreenController, UITableViewDataSource
 
   private func apply(_ spec: [String: Any]) {
     rows = (spec["rows"] as? [[String: Any]]) ?? []
-    tableView.separatorStyle = (spec["showSeparators"] as? Bool) == true ? .singleLine : .none
+    glass = (spec["glass"] as? Bool) == true
+    tableView.separatorStyle = !glass && (spec["showSeparators"] as? Bool) == true ? .singleLine : .none
+  }
+
+  private func applyBackground() {
+    view.backgroundColor = glass ? .systemGroupedBackground : .systemBackground
+    tableView.backgroundColor = glass ? .clear : .systemBackground
   }
 
   func update(_ spec: [String: Any]) {
     apply(spec)
+    if isViewLoaded { applyBackground() }
     tableView.reloadData()
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.backgroundColor = .systemBackground
+    applyBackground()
     tableView.dataSource = self
     tableView.delegate = self
     tableView.register(TableRowCell.self, forCellReuseIdentifier: "row")
@@ -81,11 +90,12 @@ final class TableScreenController: ScriptScreenController, UITableViewDataSource
     let cell = tableView.dequeueReusableCell(withIdentifier: "row", for: indexPath) as! TableRowCell
     let row = rows[indexPath.row]
     let index = indexPath.row
-    cell.configure(row) { [weak self] cellIndex, dismiss in
+    cell.configure(row, glass: glass) { [weak self] cellIndex, dismiss in
       self?.onEvent(["type": "tap", "row": index, "cell": cellIndex])
       if dismiss { self?.close() }
     }
-    cell.selectionStyle = (row["selectable"] as? Bool) == true ? .default : .none
+    // Glass cards give their own touch feedback.
+    cell.selectionStyle = !glass && (row["selectable"] as? Bool) == true ? .default : .none
     return cell
   }
 
@@ -107,16 +117,33 @@ final class TableRowCell: UITableViewCell {
   private var weights: [CGFloat] = []
   private var spacing: CGFloat = 0
   private var imageTasks: [URLSessionDataTask] = []
+  /// The row's glass card in a glass table; header rows have none.
+  private var card: UIVisualEffectView?
 
-  func configure(_ row: [String: Any], onTap: @escaping (Int, Bool) -> Void) {
+  func configure(_ row: [String: Any], glass: Bool, onTap: @escaping (Int, Bool) -> Void) {
     cellViews.forEach { $0.removeFromSuperview() }
     imageTasks.forEach { $0.cancel() }
     imageTasks.removeAll()
     cellViews.removeAll()
     weights.removeAll()
+    card?.removeFromSuperview()
+    card = nil
     spacing = CGFloat(num(row["cellSpacing"]) ?? 0)
-    backgroundColor = Style.color(row["backgroundColor"]) ?? .clear
     let isHeader = (row["isHeader"] as? Bool) == true
+    if glass {
+      backgroundColor = .clear
+      if !isHeader {
+        let selectable = (row["selectable"] as? Bool) == true
+        let v = UIVisualEffectView(effect: Self.cardEffect(tint: Style.color(row["backgroundColor"]), interactive: selectable))
+        v.layer.cornerRadius = 18
+        v.layer.cornerCurve = .continuous
+        v.clipsToBounds = true
+        contentView.insertSubview(v, at: 0)
+        card = v
+      }
+    } else {
+      backgroundColor = Style.color(row["backgroundColor"]) ?? .clear
+    }
     let cells = (row["cells"] as? [[String: Any]]) ?? []
     for (i, cell) in cells.enumerated() {
       let v = makeView(cell, index: i, isHeader: isHeader, onTap: onTap)
@@ -125,6 +152,19 @@ final class TableRowCell: UITableViewCell {
       weights.append(CGFloat(num(cell["widthWeight"]) ?? 1))
     }
     setNeedsLayout()
+  }
+
+  /// Liquid Glass on iOS 26, a thin blur material before it. The row's backgroundColor tints it.
+  private static func cardEffect(tint: UIColor?, interactive: Bool) -> UIVisualEffect {
+    #if compiler(>=6.2)
+    if #available(iOS 26.0, *) {
+      let effect = UIGlassEffect()
+      effect.tintColor = tint
+      effect.isInteractive = interactive
+      return effect
+    }
+    #endif
+    return UIBlurEffect(style: .systemThinMaterial)
   }
 
   private func alignment(_ cell: [String: Any]) -> NSTextAlignment {
@@ -191,7 +231,11 @@ final class TableRowCell: UITableViewCell {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    let bounds = contentView.bounds.inset(by: UIEdgeInsets(top: 4, left: 16, bottom: 4, right: 16))
+    card?.frame = contentView.bounds.inset(by: UIEdgeInsets(top: 3, left: 12, bottom: 3, right: 12))
+    let insets = card == nil
+      ? UIEdgeInsets(top: 4, left: 16, bottom: 4, right: 16)
+      : UIEdgeInsets(top: 7, left: 28, bottom: 7, right: 28)
+    let bounds = contentView.bounds.inset(by: insets)
     let total = weights.reduce(0, +)
     guard total > 0 else { return }
     let available = bounds.width - spacing * CGFloat(max(cellViews.count - 1, 0))

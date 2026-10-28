@@ -420,7 +420,7 @@
       addButton(title) { const c = UITableCell.button(title); this._cells.push(c); return c; }
     }
     class UITable {
-      constructor() { this.showSeparators = false; this._rows = []; this._shown = []; this._id = null; }
+      constructor() { this.showSeparators = false; this.glass = false; this._rows = []; this._shown = []; this._id = null; }
       addRow(row) { this._rows.push(row); }
       removeRow(row) { this._rows = this._rows.filter((r) => r !== row); }
       removeAllRows() { this._rows = []; }
@@ -428,7 +428,7 @@
       _spec() {
         this._shown = this._rows.slice();
         return {
-          showSeparators: !!this.showSeparators,
+          showSeparators: !!this.showSeparators, glass: !!this.glass,
           rows: this._shown.map((r) => ({
             height: Number(r.height) || 44, isHeader: !!r.isHeader, cellSpacing: Number(r.cellSpacing) || 0,
             backgroundColor: r.backgroundColor ? r.backgroundColor._spec() : null,
