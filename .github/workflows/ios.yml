@@ -35,10 +35,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Regenerate prelude and editor bundle
+      - name: Regenerate prelude
         run: |
           npm run prelude
-          npm run editor
           npm run test:prelude
 
       - name: Prebuild native project
