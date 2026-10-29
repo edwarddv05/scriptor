@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 import UIKit
 
 /// UI.view: interfaces made of SwiftUI controls, with Liquid Glass on iOS 26. The prelude sends the
@@ -19,6 +20,7 @@ enum ViewAPI {
         let model = ScriptViewModel(tree: tree, background: ViewValue.style(opts["background"])) { [weak run] event in
           run?.emit(callId, event)
         }
+        model.run = run
         let screen = ViewScreenController(model: model)
         screen.title = opts["title"] as? String
         screen.run = run
@@ -95,6 +97,8 @@ struct ScriptViewNode: Identifiable {
 final class ScriptViewModel: ObservableObject {
   @Published private(set) var root: ScriptViewNode
   let background: AnyShapeStyle?
+  /// The run that presented the view, for WebContent to find its WebView.
+  weak var run: ScriptRun?
   private let onEvent: ([String: Any]) -> Void
   /// Events are numbered; each tree says the last one the script had handled when it was built.
   private var seq = 0
@@ -261,6 +265,9 @@ struct ScriptNodeView: View {
       return AnyView(Spacer(minLength: p.double("minLength").map { CGFloat($0) }))
     case "Divider":
       return AnyView(Divider())
+    case "WebView":
+      let web = model.run.flatMap { WebAPI.web($0, Int(p.double("view") ?? 0)) }
+      return AnyView(EmbeddedWebView(web: web))
     case "Shape":
       let fill = ViewValue.style(p.props["fill"]) ?? AnyShapeStyle(Color.primary)
       switch p.string("shape") {
@@ -371,6 +378,33 @@ struct ScriptNodeView: View {
     default:
       return AnyView(DatePicker(selection: date, displayedComponents: components) { title })
     }
+  }
+}
+
+/// WebContent: a script's WebView shown inside the SwiftUI tree, with native views around or on top.
+struct EmbeddedWebView: UIViewRepresentable {
+  let web: ScriptWeb?
+
+  final class Coordinator {
+    var web: ScriptWeb?
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeUIView(context: Context) -> UIView {
+    let container = UIView()
+    container.backgroundColor = .clear
+    return container
+  }
+
+  func updateUIView(_ container: UIView, context: Context) {
+    if let old = context.coordinator.web, old !== web { old.unembed(from: container) }
+    context.coordinator.web = web
+    if let web, web.webView.superview !== container { web.embed(in: container) }
+  }
+
+  static func dismantleUIView(_ container: UIView, coordinator: Coordinator) {
+    coordinator.web?.unembed(from: container)
   }
 }
 

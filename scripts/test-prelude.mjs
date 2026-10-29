@@ -290,6 +290,22 @@ const tests = {
     const v = await run('video', `const r = await Video.play('clip.mkv', { loop: true }); return [r.source, r.loop, r.position].join();`);
     assert.equal(v, 'clip.mkv,true,3');
   },
+  'WebContent and WebView.onMessage': async () => {
+    viewEvents = [];
+    const v = await run('webcontent', `
+      const web = new WebView();
+      const got = [];
+      web.onMessage = (m) => got.push(m.tipo + ':' + m.url);
+      __webMessage(web._id, { tipo: 'enlace', url: 'https://a.test' });
+      const ui = UI.view({}, () => ZStack([WebContent(web).ignoresSafeArea(), Text('encima')]));
+      await ui.present();
+      return got.join() + '|' + web._id;`);
+    const [msgs, id] = v.split('|');
+    assert.equal(msgs, 'enlace:https://a.test');
+    const tree = JSON.parse(JSON.stringify(viewTrees[0]));
+    assert.equal(tree.children[0].type, 'WebView');
+    assert.equal(tree.children[0].props.view, Number(id));
+  },
   'UI.view tree, events and state': async () => {
     viewEvents = [
       { handler: '0.3:action' },

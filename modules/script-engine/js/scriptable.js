@@ -456,6 +456,13 @@
 
     // Views by id, so native can ask a view's shouldAllowRequest at any time.
     const webViews = new Map();
+    // sendToScript(value) in the page (a Scriptor extra).
+    global.__webMessage = (viewId, value) => {
+      const view = webViews.get(viewId);
+      if (view && typeof view.onMessage === 'function') {
+        try { view.onMessage(value); } catch (e) { console.error(e); }
+      }
+    };
     global.__webRequest = (viewId, e) => {
       const view = webViews.get(viewId);
       if (view) view._decide(e);
@@ -463,7 +470,7 @@
     };
 
     class WebView {
-      constructor() { this._id = callSync('web.create'); this._filter = null; webViews.set(this._id, this); }
+      constructor() { this._id = callSync('web.create'); this._filter = null; this.onMessage = null; webViews.set(this._id, this); }
       get shouldAllowRequest() { return this._filter; }
       set shouldAllowRequest(fn) { this._filter = typeof fn === 'function' ? fn : null; callSync('web.setFilter', this._id, !!this._filter); }
       _decide(e) {

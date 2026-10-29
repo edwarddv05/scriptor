@@ -544,6 +544,7 @@ Los componentes son globales y también están en `UI` (`UI.Text`, `UI.Button`�
 | `ProgressView` | `ProgressView()` gira; `ProgressView(valor, { total, label })` se llena. |
 | `Spacer`, `Divider` | Espacio flexible y línea separadora. |
 | `Rectangle`, `RoundedRectangle(r)`, `Circle`, `Capsule` | Formas. Se rellenan con `.fill(color \| degradado \| material)`. |
+| `WebContent` | `WebContent(webView)`. Muestra un `WebView` dentro de la vista, con controles nativos alrededor o encima (ver abajo). |
 
 Modificadores (se encadenan y se aplican en orden, como en SwiftUI):
 
@@ -559,6 +560,43 @@ Modificadores (se encadenan y se aplican en orden, como en SwiftUI):
 | `.disabled()`, `.controlSize('small' \| 'large' \| …)`, `.lineLimit(n)`, `.multilineTextAlignment('center')` | Desactivar, tamaño de los controles y texto. |
 | `.onTapGesture(fn)` | Toque sobre cualquier vista. |
 | `.ignoresSafeArea()`, `.scrollContentBackground('hidden')`, `.aspectRatio('fit' \| 'fill')`, `.id(clave)` | Ocupar toda la pantalla, quitar el fondo de una `List` para ver el de detrás, encajar imágenes y dar una clave estable a elementos de una lista que cambian de orden. |
+
+#### Combinar un `WebView` con controles nativos
+
+Si un script ya dibuja su contenido en HTML (un visor de fotos, vídeos o stories), no hace falta rehacerlo. Mete el `WebView` en la vista con `WebContent(webView)` y pon encima la barra, los botones y los menús nativos con Liquid Glass. El HTML queda para el contenido y la interfaz es nativa.
+
+La comunicación va en los dos sentidos:
+
+- **Del script a la página:** `await webView.evaluateJavaScript('mostrar(3)')`, como siempre.
+- **De la página al script:** la página llama a `sendToScript(valor)` y el script lo recibe en `webView.onMessage = (valor) => …`. El valor puede ser un texto, un número o un objeto.
+
+```js
+const visor = new WebView();
+await visor.loadHTML(`
+  <body style="margin:0;background:#000">
+    <img id="foto" src="https://picsum.photos/800/1400" style="width:100%;height:100vh;object-fit:cover"
+         onclick="sendToScript({ tipo: 'toque', x: event.clientX })">
+    <script>function siguiente() { foto.src = 'https://picsum.photos/800/1400?' + Date.now(); }</script>
+  </body>`);
+
+const ui = UI.view({ toques: 0 }, (s) =>
+  ZStack({ alignment: 'top' }, [
+    WebContent(visor).ignoresSafeArea(),
+    HStack([
+      Button({ systemImage: 'xmark' }, () => ui.close()).style('glass'),
+      Spacer(),
+      Text(`${s.toques} toques`).padding({ horizontal: 14, vertical: 8 }).glassEffect(),
+      Button({ systemImage: 'forward.fill' }, () => visor.evaluateJavaScript('siguiente()')).style('glass'),
+    ]).padding(),
+  ])
+);
+visor.onMessage = (m) => { if (m.tipo === 'toque') ui.state.toques++; };
+await ui.present({ fullscreen: true });
+```
+
+Con `fullscreen: true` la vista ocupa toda la pantalla sin barra del sistema. Para salir hay que poner un botón que llame a `ui.close()`, como en el ejemplo, o agitar el iPhone.
+
+Si el mismo `WebView` está a la vez en un `WebContent` y abierto con `present()`, se ve solo en uno de los dos sitios. Usa una cosa u otra.
 
 El vidrio luce sobre colores o imágenes. Sobre un fondo blanco liso apenas se nota, así que dale a la vista un `background`. Con `List` o `Form`, añade `.scrollContentBackground('hidden')` para que se vea.
 
@@ -684,6 +722,7 @@ Los scripts escritos para Scriptable funcionan sin cambios: las clases de [docs.
 - `Image.resize`, `Image.crop`, `Image.convert` e `Image.info` (ver [Imagen](#imagen)).
 - `Location.geocode(dirección, locale?)`: de una dirección a lugares con coordenadas.
 - `Data.fromBytes(bytes)`, `data.bytes` y `data.length`.
+- `webView.onMessage = (valor) => …` y `sendToScript(valor)` en la página: la página avisa al script sin trucos de URLs. También `WebContent(webView)` para meter el `WebView` dentro de un `UI.view`.
 - `table.glass = true`: cada fila de un `UITable` se muestra como una tarjeta de Liquid Glass sobre un fondo agrupado. Las filas con `isHeader` quedan como títulos sin tarjeta, el `backgroundColor` de una fila tiñe el vidrio y las filas con `onSelect` reaccionan al tocarlas. En versiones anteriores a iOS 26 se usa un desenfoque translúcido. En Scriptable la propiedad se ignora y la tabla se ve normal.
 
 ```js

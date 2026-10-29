@@ -1199,6 +1199,13 @@ enum Prelude {
 
     // Views by id, so native can ask a view's shouldAllowRequest at any time.
     const webViews = new Map();
+    // sendToScript(value) in the page (a Scriptor extra).
+    global.__webMessage = (viewId, value) => {
+      const view = webViews.get(viewId);
+      if (view && typeof view.onMessage === 'function') {
+        try { view.onMessage(value); } catch (e) { console.error(e); }
+      }
+    };
     global.__webRequest = (viewId, e) => {
       const view = webViews.get(viewId);
       if (view) view._decide(e);
@@ -1206,7 +1213,7 @@ enum Prelude {
     };
 
     class WebView {
-      constructor() { this._id = callSync('web.create'); this._filter = null; webViews.set(this._id, this); }
+      constructor() { this._id = callSync('web.create'); this._filter = null; this.onMessage = null; webViews.set(this._id, this); }
       get shouldAllowRequest() { return this._filter; }
       set shouldAllowRequest(fn) { this._filter = typeof fn === 'function' ? fn : null; callSync('web.setFilter', this._id, !!this._filter); }
       _decide(e) {
@@ -2224,6 +2231,8 @@ enum Prelude {
       ProgressView: (value, opts = {}) => new ViewNode('ProgressView', { value: value == null ? null : Number(value), total: Number(opts.total) || 1, label: opts.label }),
       Spacer: (minLength) => new ViewNode('Spacer', { minLength: minLength == null ? null : Number(minLength) }),
       Divider: () => new ViewNode('Divider'),
+      /** A WebView (already loaded or loading) shown inside this view; native views can go around or on top. */
+      WebContent: (webView) => new ViewNode('WebView', { view: webView && webView._id }),
       Rectangle: () => new ViewNode('Shape', { shape: 'rect' }),
       RoundedRectangle: (cornerRadius = 12) => new ViewNode('Shape', { shape: 'rect', cornerRadius: Number(cornerRadius) }),
       Circle: () => new ViewNode('Shape', { shape: 'circle' }),

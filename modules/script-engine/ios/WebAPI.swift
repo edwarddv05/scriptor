@@ -10,6 +10,9 @@ enum WebAPI {
   private static var nextId = 1
   private static let idLock = NSLock()
 
+  /// The view a script's WebView object stands for, if it still exists. Main thread only.
+  static func web(_ run: ScriptRun, _ id: Int) -> ScriptWeb? { views["\(run.id)#\(id)"] }
+
   private static func view(_ run: ScriptRun, _ id: Int) throws -> ScriptWeb {
     guard let web = views["\(run.id)#\(id)"] else { throw ScriptError("WebView is gone") }
     return web
@@ -129,13 +132,15 @@ final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     return v
   }()
 
-  /// Injected in every page: log/logError reach the script's console, completion() ends an eval.
+  /// Injected in every page: log/logError reach the script's console, completion() ends an eval,
+  /// sendToScript(value) reaches the WebView's onMessage in the script.
   private static let bridgeScript = """
     (function () {
       const post = (m) => window.webkit.messageHandlers.scriptor.postMessage(m);
       const text = (args) => Array.from(args).map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
       window.log = function () { post({ type: 'log', level: 'log', message: text(arguments) }); };
       window.logError = function () { post({ type: 'log', level: 'error', message: text(arguments) }); };
+      window.sendToScript = function (value) { post({ type: 'message', value: value === undefined ? null : value }); };
       window.completion = function (value) {
         post({ type: 'completion', id: window.__scriptorCallback || 0, value: value === undefined ? null : value });
       };
@@ -170,6 +175,19 @@ final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     webView.removeFromSuperview()
     webView.frame = parking.bounds.isEmpty ? UIScreen.main.bounds : parking.bounds
     parking.addSubview(webView)
+  }
+
+  /// Shows the page inside a UI.view (WebContent). It goes back to parking when that view goes away.
+  func embed(in container: UIView) {
+    webView.removeFromSuperview()
+    webView.isOpaque = false
+    webView.frame = container.bounds
+    webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    container.addSubview(webView)
+  }
+
+  func unembed(from container: UIView) {
+    if webView.superview === container && screen == nil { park() }
   }
 
   func destroy() {
@@ -229,6 +247,8 @@ final class ScriptWeb: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMes
       let level = (body["level"] as? String) ?? "log"
       let text = (body["message"] as? String) ?? ""
       run?.queue.async { [weak run = self.run] in run?.log(level, text) }
+    case "message":
+      run?.invoke("__webMessage", id, body["value"].flatMap { $0 is NSNull ? nil : $0 })
     case "completion":
       let id = (body["id"] as? NSNumber)?.intValue ?? 0
       let value = body["value"].flatMap { $0 is NSNull ? nil : $0 }

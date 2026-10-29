@@ -113,6 +113,8 @@
       ProgressView: (value, opts = {}) => new ViewNode('ProgressView', { value: value == null ? null : Number(value), total: Number(opts.total) || 1, label: opts.label }),
       Spacer: (minLength) => new ViewNode('Spacer', { minLength: minLength == null ? null : Number(minLength) }),
       Divider: () => new ViewNode('Divider'),
+      /** A WebView (already loaded or loading) shown inside this view; native views can go around or on top. */
+      WebContent: (webView) => new ViewNode('WebView', { view: webView && webView._id }),
       Rectangle: () => new ViewNode('Shape', { shape: 'rect' }),
       RoundedRectangle: (cornerRadius = 12) => new ViewNode('Shape', { shape: 'rect', cornerRadius: Number(cornerRadius) }),
       Circle: () => new ViewNode('Shape', { shape: 'circle' }),

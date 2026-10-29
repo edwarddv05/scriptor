@@ -12,7 +12,7 @@ Scriptor ejecuta scripts de JavaScript en iOS con acceso a APIs nativas, en la l
 | Sin EXIF, álbumes ni originales | `Photos.metadata`, `Photos.albums`, `Photos.export` (originales HEIC/MOV) |
 | Sin vídeo ni audio | `Video.export` (comprimir/recortar), `Video.thumbnail`, `Audio.play`, `Audio.record`, `Camera.video` |
 | Los vídeos solo se ven si iOS sabe decodificarlos | `Video.play` usa VLC: reproduce **AV1** en cualquier iPhone (por software en los anteriores al 15 Pro), además de MKV, WebM y streams |
-| Interfaces limitadas a `UITable`, `Alert` y `WebView` | `UI.view` crea pantallas con los controles de Apple (SwiftUI): botones, interruptores, deslizadores, pickers, formularios y Liquid Glass en iOS 26 |
+| Interfaces limitadas a `UITable`, `Alert` y `WebView` | `UI.view` crea pantallas con los controles de Apple (SwiftUI): botones, interruptores, deslizadores, pickers, formularios y Liquid Glass en iOS 26. Con `WebContent` se combinan con un `WebView`: HTML para el contenido y controles nativos encima |
 | Portapapeles solo para texto e imagen | `Pasteboard.copyFile` / `pasteFile` con cualquier tipo de archivo |
 | Leer archivos siempre completos | `FS.readBytes(path, offset, length)`, `FS.appendText`, `FS.zip` |
 | Carpetas externas solo mediante marcadores | `FS.pickFolder('nombre')` recuerda una carpeta para todas las ejecuciones |
