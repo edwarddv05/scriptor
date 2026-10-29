@@ -148,7 +148,7 @@ export const API_DOCS: ApiSection[] = [
       { name: 'Image', signature: 'Image.fromFile(path) / Image.fromData(data)', description: 'image.size. Se puede pasar a Photos.save, QuickLook, ShareSheet, DrawContext y widgets.' },
       { name: 'Alert', signature: 'new Alert()', description: 'addAction, addDestructiveAction, addCancelAction, addTextField, addSecureTextField, presentAlert(), presentSheet(), textFieldValue(i).' },
       { name: 'WebView', signature: 'new WebView() / WebView.loadHTML(html, base, size, fullscreen)', description: 'loadURL, loadHTML, loadFile, loadRequest, evaluateJavaScript(js, useCallback), getHTML, present(fullscreen), waitForLoad, shouldAllowRequest. En pantalla completa, agita el iPhone para salir.' },
-      { name: 'UITable', signature: 'new UITable() / UITableRow / UITableCell', description: 'Tablas con texto, imágenes, botones, onSelect y onTap; reload(); present(fullscreen). Agita para salir.' },
+      { name: 'UITable', signature: 'new UITable() / UITableRow / UITableCell', description: 'Tablas con texto, imágenes, botones, onSelect y onTap; reload(); present(fullscreen). Agita para salir. Extra de Scriptor: table.glass = true muestra las filas como tarjetas de Liquid Glass.' },
       { name: 'ListWidget', signature: 'new ListWidget()', description: 'addText, addDate, addImage, addStack, addSpacer… presentSmall/Medium/Large/ExtraLarge muestran una vista previa.' },
       { name: 'DrawContext', signature: 'new DrawContext()', description: 'Dibujo 2D con Path, Rect, Point, Size, Color, Font; getImage().' },
       { name: 'SFSymbol', signature: 'SFSymbol.named(name).image', description: 'Símbolos del sistema como imagen, con peso y fuente.' },
