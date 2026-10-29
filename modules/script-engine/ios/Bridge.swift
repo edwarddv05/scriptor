@@ -29,6 +29,7 @@ final class NativeRegistry {
     UIAPI.register(self)
     WebAPI.register(self)
     TableAPI.register(self)
+    ViewAPI.register(self)
     GraphicsAPI.register(self)
     FormatAPI.register(self)
     LocationAPI.register(self)

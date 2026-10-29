@@ -53,7 +53,12 @@ const sync = {
   'web.create': () => 1,
   'web.setFilter': () => {},
   'web.decide': (view, id, allow) => decided.push([view, id, allow]),
+  'nview.update': (id, tree) => viewTrees.push(tree),
+  'nview.close': () => {},
 };
+const viewTrees = [];
+// Taps sent to the next UI.view while it is presented, then it closes.
+let viewEvents = [];
 const decided = [];
 let lastDraw = null;
 let lastHTML = null;
@@ -84,6 +89,17 @@ ctx.__native = {
         status: 200, statusText: 'OK', url, headers: { 'content-type': 'application/json' }, rawHeaders: { 'Content-Type': 'application/json' },
         body: u8(Buffer.from(JSON.stringify({ url, method: opts.method, headers: opts.headers, body: body === undefined ? null : Buffer.from(body).toString() }))),
       }), 1);
+    } else if (name === 'nview.present') {
+      viewTrees.length = 0;
+      viewTrees.push(args[0]);
+      const events = viewEvents;
+      setTimeout(async () => {
+        for (const [i, e] of events.entries()) {
+          ctx.__emit(id, { ...e, seq: i + 1 });
+          await new Promise((r) => setTimeout(r, 2));
+        }
+        ctx.__resolve(id, null);
+      }, 1);
     } else if (asyncMocks[name]) {
       setTimeout(() => ctx.__resolve(id, asyncMocks[name](args)), 1);
     } else {
@@ -268,6 +284,48 @@ const tests = {
       return out.join(',') + '|' + ticks + '|' + config.runsInApp + '|' + Device.screenResolution().width + '|' + Device.language();
     `);
     assert.equal(v, '<av,hi,/a,end|3|true|1170|es');
+  },
+  'UI.view tree, events and state': async () => {
+    viewEvents = [
+      { handler: '0.3:action' },
+      { handler: '0.2:onChange', value: true },
+      { handler: '0.4:onChange', value: 2 },
+      { handler: '0.5:onChange', value: 'hola' },
+    ];
+    const v = await run('view', `
+      const ui = UI.view({ n: 1, on: false, pick: 'b', name: '' }, (s) =>
+        VStack({ spacing: 8 }, [
+          Text('n=' + s.n).font('title').foregroundStyle(Color.red()),
+          s.on ? Text('encendido') : null,
+          Toggle('On', s.on, (v) => s.on = v),
+          Button({ title: 'Más', systemImage: 'plus' }, () => s.n++).style('glassProminent'),
+          Picker('P', s.pick, ['a', 'b', { label: 'C', value: 'c' }], (v) => s.pick = v),
+          TextField('Nombre', s.name, (t) => s.name = t),
+          UI.Image('star.fill'),
+          Slider(2, { min: 0, max: Infinity }),
+        ]).padding().glassEffect({ interactive: true, tint: '#FF000080' })
+      );
+      await ui.present({ title: 'Prueba', background: UI.gradient(['blue', Color.white()]) });
+      return JSON.stringify(ui.state);`);
+    assert.equal(v, '{"n":2,"on":true,"pick":"c","name":"hola"}');
+    // Trees come from the script's realm; compare them as plain JSON.
+    const first = JSON.parse(JSON.stringify(viewTrees[0]));
+    assert.equal(first.ack, 0);
+    assert.deepEqual(first.mods, [['padding', null], ['glassEffect', { interactive: true, tint: '#FF000080' }]]);
+    assert.deepEqual(first.children.map((c) => c.key), ['0.0', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7']);
+    assert.deepEqual(first.children[0].mods[1], ['foregroundStyle', { hex: 'FF0000', alpha: 1 }]);
+    assert.equal(first.children[2].props.action, '0.3:action');
+    assert.equal(first.children[3].props.selection, 1);
+    assert.equal(first.children[5].props.system, 'star.fill');
+    assert.equal(first.children[6].props.max, 'infinity');
+    const last = JSON.parse(JSON.stringify(viewTrees[viewTrees.length - 1]));
+    assert.equal(last.ack, 4);
+    assert.deepEqual(last.children.map((c) => c.key), ['0.0', '0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7']);
+    assert.equal(last.children[1].props.text, 'encendido');
+    assert.equal(last.children[4].props.selection, 2);
+    assert.equal(last.children[5].props.text, 'hola');
+    assert.equal(typeof ctx.VStack, 'function');
+    assert.equal(ctx.Image.name, 'Image');
   },
 };
 

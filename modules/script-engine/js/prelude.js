@@ -737,6 +737,7 @@
   let shortcutOutput;
 
   // @include scriptable.js
+  // @include views.js
 
   global.__runMain = (fn) => {
     Promise.resolve()
