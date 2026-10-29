@@ -11,6 +11,8 @@ Scriptor ejecuta scripts de JavaScript en iOS con acceso a APIs nativas, en la l
 | `Request` carga la respuesta entera en memoria y no informa del progreso | `Net.download` y `Net.upload` trabajan por streaming a disco, con progreso y cancelación; también hay WebSocket |
 | Sin EXIF, álbumes ni originales | `Photos.metadata`, `Photos.albums`, `Photos.export` (originales HEIC/MOV) |
 | Sin vídeo ni audio | `Video.export` (comprimir/recortar), `Video.thumbnail`, `Audio.play`, `Audio.record`, `Camera.video` |
+| Los vídeos solo se ven si iOS sabe decodificarlos | `Video.play` usa VLC: reproduce **AV1** en cualquier iPhone (por software en los anteriores al 15 Pro), además de MKV, WebM y streams |
+| Interfaces limitadas a `UITable`, `Alert` y `WebView` | `UI.view` crea pantallas con los controles de Apple (SwiftUI): botones, interruptores, deslizadores, pickers, formularios y Liquid Glass en iOS 26 |
 | Portapapeles solo para texto e imagen | `Pasteboard.copyFile` / `pasteFile` con cualquier tipo de archivo |
 | Leer archivos siempre completos | `FS.readBytes(path, offset, length)`, `FS.appendText`, `FS.zip` |
 | Carpetas externas solo mediante marcadores | `FS.pickFolder('nombre')` recuerda una carpeta para todas las ejecuciones |
@@ -22,14 +24,16 @@ Los scripts de Scriptable funcionan sin cambios. Estas APIs están implementadas
 - `FileManager.iCloud()` usa la carpeta local.
 - Las presentaciones a pantalla completa se cierran agitando el iPhone.
 
-La referencia completa está dentro de la app (botón 📖) y en [src/lib/api-docs.ts](src/lib/api-docs.ts).
+La referencia rápida está dentro de la app (botón 📖) y en [src/lib/api-docs.ts](src/lib/api-docs.ts). La guía completa para escribir scripts, con todas las funciones, opciones y ejemplos, está en [docs/guia-scripts.md](docs/guia-scripts.md).
 
 ## Cómo funciona
 
 - **Motor** ([modules/script-engine/ios](modules/script-engine/ios)): un módulo nativo de Expo en Swift. Cada ejecución crea su propio `JSContext` de JavaScriptCore en una cola dedicada, así que los scripts no comparten memoria con la app ni entre sí.
-  - Las funciones nativas se registran por nombre en `NativeRegistry` y se agrupan por archivo: `FileAPI`, `NetAPI`, `PhotosAPI`, `MediaAPI`, `UIAPI`, `CryptoAPI` y `CoreAPI`.
+  - Las funciones nativas se registran por nombre en `NativeRegistry` y se agrupan por archivo: `FileAPI`, `NetAPI`, `PhotosAPI`, `MediaAPI`, `UIAPI`, `CryptoAPI`, `CoreAPI` y otros.
+  - **Interfaces de los scripts** ([ViewAPI.swift](modules/script-engine/ios/ViewAPI.swift)): `UI.view` envía el árbol de la vista como datos y Swift lo dibuja con SwiftUI. Los controles devuelven eventos numerados, y cada control conserva lo que tocó el usuario hasta que llega un árbol construido después de ese evento, para que no salte hacia atrás. El vidrio usa `glassEffect` en iOS 26 y materiales translúcidos antes.
+  - **Reproductor** ([VideoAPI.swift](modules/script-engine/ios/VideoAPI.swift)): `Video.play` usa [MobileVLCKit](https://code.videolan.org/videolan/VLCKit), que decodifica AV1 con dav1d. Es la única dependencia nativa grande: hace que el `.ipa` pase de unos 18 MB a unos 35 MB.
   - Los datos binarios pasan como `Uint8Array` sin convertirse a base64.
-- **Runtime JS** ([modules/script-engine/js/prelude.js](modules/script-engine/js/prelude.js)): define las APIs que ven los scripts encima del puente nativo.
+- **Runtime JS** ([modules/script-engine/js/prelude.js](modules/script-engine/js/prelude.js)): define las APIs que ven los scripts encima del puente nativo. Incluye [scriptable.js](modules/script-engine/js/scriptable.js) (compatibilidad con Scriptable) y [views.js](modules/script-engine/js/views.js) (`UI.view` y sus componentes).
   - `npm run prelude` lo convierte en `Prelude.swift`.
   - `npm run test:prelude` lo prueba en Node simulando el puente.
 - **Interfaz** (Expo Router, [src/app](src/app)): rejilla de scripts, editor, consola y documentación, con Liquid Glass en iOS 26. Los colores, iconos y espaciados están en [src/theme.ts](src/theme.ts).
