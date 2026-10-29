@@ -10,6 +10,8 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  # Video.play: VLC decodes AV1 (dav1d), MKV and WebM in software on any iPhone.
+  s.dependency 'MobileVLCKit', '~> 3.7'
   s.frameworks = 'JavaScriptCore', 'Photos', 'PhotosUI', 'AVFoundation', 'CryptoKit', 'UniformTypeIdentifiers', 'ImageIO', 'QuickLook', 'UserNotifications',
                      'WebKit', 'EventKit', 'EventKitUI', 'Contacts', 'CoreLocation', 'MessageUI', 'SafariServices', 'Speech'
 

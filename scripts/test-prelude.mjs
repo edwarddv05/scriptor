@@ -67,6 +67,7 @@ const asyncMocks = {
   'ui.alert': (args) => { lastAlert = args; return { index: 1, values: ['typed'] }; },
   'web.loadHTML': (args) => { lastHTML = args[1]; return null; },
   'web.present': () => null,
+  'video.play': (args) => ({ source: args[0], loop: args[1].loop, position: 3, duration: 10, ended: false }),
 };
 
 const ctx = vm.createContext({});
@@ -284,6 +285,10 @@ const tests = {
       return out.join(',') + '|' + ticks + '|' + config.runsInApp + '|' + Device.screenResolution().width + '|' + Device.language();
     `);
     assert.equal(v, '<av,hi,/a,end|3|true|1170|es');
+  },
+  'Video.play': async () => {
+    const v = await run('video', `const r = await Video.play('clip.mkv', { loop: true }); return [r.source, r.loop, r.position].join();`);
+    assert.equal(v, 'clip.mkv,true,3');
   },
   'UI.view tree, events and state': async () => {
     viewEvents = [

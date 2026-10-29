@@ -26,6 +26,7 @@ final class NativeRegistry {
     CryptoAPI.register(self)
     PhotosAPI.register(self)
     MediaAPI.register(self)
+    VideoAPI.register(self)
     UIAPI.register(self)
     WebAPI.register(self)
     TableAPI.register(self)

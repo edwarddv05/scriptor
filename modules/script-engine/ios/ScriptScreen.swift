@@ -17,6 +17,9 @@ class ScriptScreenController: UIViewController, UIAdaptivePresentationController
   private var onClose: (() -> Void)?
   private var exitBar: UIView?
   private var fullscreen = false
+  /// Whether a fullscreen presentation shows the "shake to exit" hint. Screens with their own
+  /// close button turn it off.
+  var showsExitHint: Bool { true }
 
   /// Presents this screen fullscreen (no chrome) or as a sheet with a close button.
   func show(fullscreen: Bool, onClose: @escaping () -> Void) {
@@ -64,7 +67,7 @@ class ScriptScreenController: UIViewController, UIAdaptivePresentationController
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     becomeFirstResponder()
-    if fullscreen { showHint() }
+    if fullscreen && showsExitHint { showHint() }
   }
 
   override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {

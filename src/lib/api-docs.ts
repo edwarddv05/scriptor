@@ -83,6 +83,7 @@ export const API_DOCS: ApiSection[] = [
     title: 'Imagen, vídeo y audio',
     summary: 'Procesado nativo con ImageIO y AVFoundation.',
     items: [
+      { name: 'Video.play', signature: 'await Video.play(ruta | url, { loop, start, muted })', description: 'Reproductor a pantalla completa con VLC: AV1, HEVC, MKV y WebM en cualquier iPhone, también por URL. Devuelve { position, duration, ended } al cerrarlo o al terminar.' },
       { name: 'Image.resize', signature: "await Image.resize(path, { width, height, format, quality, dest })", description: 'Reduce sin cargar la imagen completa en memoria. format: jpeg, png, heic.' },
       { name: 'Image.crop', signature: 'await Image.crop(path, { x, y, width, height })', description: 'Recorta.' },
       { name: 'Image.convert', signature: "await Image.convert(path, 'png'|{ format, quality, dest })", description: 'Convierte de formato.' },

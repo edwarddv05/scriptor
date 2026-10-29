@@ -624,6 +624,8 @@ enum Prelude {
       return callAsync('video.export', [path, rest], (e) => { if (onProgress) onProgress(e); });
     },
     extractAudio: (path, dest) => callAsync('video.export', [path, { quality: 'audio', dest }]),
+    /** Fullscreen VLC player (AV1, MKV, WebM… on any iPhone). Resolves with { position, duration, ended } when closed. */
+    play: (source, opts = {}) => callAsync('video.play', [source, opts]),
   };
 
   global.Audio = {
