@@ -167,6 +167,11 @@ function createRuntime(host: ScriptorHost, dataPath: string, data: Record<string
 
   const api: Record<string, unknown> = {};
   for (const root of API_ROOTS) api[root] = host.api(root);
+  // `Video` is both the <Video> component and the API (Video.play, Video.info…).
+  // Only the API's own names go to Scriptor, so React reading defaultProps or displayName sees the component.
+  const videoApi = api.Video as Record<string, unknown>;
+  const VIDEO_API = new Set(['play', 'info', 'thumbnail', 'export', 'extractAudio']);
+  api.Video = new Proxy(COMPONENTS.Video, { get: (component, key) => (typeof key === 'string' && VIDEO_API.has(key) ? videoApi[key] : Reflect.get(component, key)) });
   const scope: Record<string, unknown> = {
     React, Fragment, h,
     useState, useEffect, useMemo, useRef, useCallback, useReducer, useContext, useStored,

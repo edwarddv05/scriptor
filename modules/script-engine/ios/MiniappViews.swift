@@ -80,11 +80,7 @@ final class RemoteImages: @unchecked Sendable {
     let file = file(for: url)
     if let data = try? Data(contentsOf: file) { return data }
 
-    lock.lock()
-    if let running = downloads[url] {
-      lock.unlock()
-      return try await running.value
-    }
+    if let running = runningDownload(url) { return try await running.value }
     let task = Task<Data, Error> {
       guard let address = URL(string: url) else { throw ScriptError("URL no válida: \(url)") }
       var request = URLRequest(url: address)
@@ -97,14 +93,30 @@ final class RemoteImages: @unchecked Sendable {
       try? data.write(to: file, options: .atomic)
       return data
     }
-    downloads[url] = task
-    lock.unlock()
-    defer {
-      lock.lock()
-      downloads[url] = nil
-      lock.unlock()
+    let shared = startDownload(url, task)
+    defer { finishDownload(url) }
+    return try await shared.value
+  }
+
+  // NSLock only in synchronous helpers: Swift 6 does not allow it across an await.
+  private func runningDownload(_ url: String) -> Task<Data, Error>? {
+    lock.withLock { downloads[url] }
+  }
+
+  /// Keeps the first task when two views asked for the same URL at once.
+  private func startDownload(_ url: String, _ task: Task<Data, Error>) -> Task<Data, Error> {
+    lock.withLock {
+      if let running = downloads[url] {
+        task.cancel()
+        return running
+      }
+      downloads[url] = task
+      return task
     }
-    return try await task.value
+  }
+
+  private func finishDownload(_ url: String) {
+    lock.withLock { downloads[url] = nil }
   }
 
   func cached(_ url: String, pixels: Int) -> Decoded? {
@@ -301,7 +313,7 @@ final class InlineVideoProps: UIBaseViewProps {
   var onBuffering = EventDispatcher()
 }
 
-private struct VideoSettings: Equatable {
+struct VideoSettings: Equatable {
   var url: String
   var headers: [String: String]
   var playing: Bool
