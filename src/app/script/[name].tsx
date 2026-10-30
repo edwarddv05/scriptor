@@ -10,7 +10,7 @@ import { ConsoleView, RunStatus } from '@/components/console-view';
 import { DocsList } from '@/components/docs-list';
 import { COMPLETIONS } from '@/lib/api-docs';
 import { startRun, stopRun, useRun } from '@/lib/runner';
-import { listScripts } from '@/lib/scripts';
+import { isApp, listScripts } from '@/lib/scripts';
 import { colorFor, colors, radius, scriptColors, spacing } from '@/theme';
 
 const completions = COMPLETIONS.map(({ label, detail }) => ({ label, detail }));
@@ -48,9 +48,13 @@ export default function EditorScreen() {
     };
   }, []);
 
+  const app = isApp(name);
+
   const execute = async () => {
     const source = await editor.current?.save();
     if (source === undefined) return;
+    // A miniapp runs on the whole screen; Editar there comes back here.
+    if (app) return router.push({ pathname: '/app/[name]', params: { name, from: 'editor' } });
     if (!wide) editor.current?.blur();
     setPanel('console');
     setRunId(startRun(name, source));
@@ -95,12 +99,14 @@ export default function EditorScreen() {
           selected={panel === 'docs'}
           onPress={() => toggle('docs')}
         />
-        <Stack.Toolbar.Button
-          icon="text.alignleft"
-          accessibilityLabel="Consola"
-          selected={panel === 'console'}
-          onPress={() => toggle('console')}
-        />
+        {!app && (
+          <Stack.Toolbar.Button
+            icon="text.alignleft"
+            accessibilityLabel="Consola"
+            selected={panel === 'console'}
+            onPress={() => toggle('console')}
+          />
+        )}
         {running ? (
           <Stack.Toolbar.Button icon="stop.fill" accessibilityLabel="Detener" variant="prominent" tintColor={colors.danger} onPress={() => stopRun(runId!)} />
         ) : (

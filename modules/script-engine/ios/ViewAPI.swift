@@ -115,7 +115,9 @@ final class ScriptViewModel: ObservableObject {
 
   func update(_ tree: [String: Any]) {
     ack = Int(num(tree["ack"]) ?? 0)
-    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { root = ScriptViewNode(tree) }
+    // No implicit animation: a view that follows a control or a finger must land where the script
+    // put it on the next frame, not spring toward it.
+    root = ScriptViewNode(tree)
   }
 
   @discardableResult

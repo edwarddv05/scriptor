@@ -2,7 +2,7 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import type { ScriptFile } from '@/lib/scripts';
+import { displayName, fileKind, type ScriptFile } from '@/lib/scripts';
 import { colorFor, colors, glyphFor, radius, scriptColors, spacing, type } from '@/theme';
 
 const liquidGlass = isLiquidGlassAvailable();
@@ -20,7 +20,7 @@ export function ScriptTile({ script, onPress, onRun }: Props) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={script.name}
+      accessibilityLabel={`${script.app ? 'Miniapp' : 'Script'} ${script.name}, ${fileKind(script.name)}`}
       accessibilityHint="Abre el editor. Mantén pulsado para más opciones."
       style={({ pressed }) => [
         styles.tile,
@@ -29,6 +29,9 @@ export function ScriptTile({ script, onPress, onRun }: Props) {
       ]}>
       <View style={styles.top}>
         <SymbolView name={glyphFor(script)} size={24} tintColor={colors.onTile} weight="semibold" />
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{fileKind(script.name)}</Text>
+        </View>
         <Pressable
           onPress={onRun}
           hitSlop={8}
@@ -42,7 +45,8 @@ export function ScriptTile({ script, onPress, onRun }: Props) {
       </View>
       <View style={styles.text}>
         <Text style={type.tileName} numberOfLines={2}>
-          {script.name}
+          {/* Miniapps and Python scripts keep their extension on disk; the tile shows it without. */}
+          {displayName(script.name)}
         </Text>
         {script.summary ? (
           <Text style={type.tileSummary} numberOfLines={2}>
@@ -76,5 +80,14 @@ const styles = StyleSheet.create({
   // Before iOS 26 GlassView renders as a plain view.
   runFallback: { backgroundColor: 'rgba(255,255,255,0.22)' },
   runPressed: { opacity: 0.7 },
+  badge: {
+    marginLeft: spacing.xs,
+    marginRight: 'auto',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  badgeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.4, color: colors.onTile },
   text: { gap: 3 },
 });

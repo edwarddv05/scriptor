@@ -47,3 +47,6 @@ example
 /android
 /build
 *.ipa
+
+# ccache (CI)
+.ccache/

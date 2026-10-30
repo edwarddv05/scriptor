@@ -20,6 +20,11 @@ jobs:
     timeout-minutes: 60
     env:
       CONFIGURATION: ${{ inputs.configuration || 'Release' }}
+      # React Native's Podfile hook compiles C, C++ and Objective-C through ccache when this is 1.
+      USE_CCACHE: '1'
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_MAXSIZE: 3G
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +40,24 @@ jobs:
 
       - run: npm ci
 
+      # Compiler results from earlier builds of the same configuration: unchanged pods are not
+      # compiled again. Each build saves a new copy and restores the newest one.
+      - name: Install ccache
+        run: brew install ccache
+
+      - uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-${{ env.CONFIGURATION }}-${{ github.sha }}
+          restore-keys: ccache-${{ env.CONFIGURATION }}-
+
+      # Pod sources (Hermes, VLCKit…) are downloaded once per set of dependencies.
+      - uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: pods-${{ hashFiles('package-lock.json') }}
+          restore-keys: pods-
+
       - name: Regenerate prelude
         run: |
           npm run prelude
@@ -45,6 +68,7 @@ jobs:
 
       - name: Build app (unsigned)
         run: |
+          ccache --zero-stats
           WORKSPACE=$(ls -d ios/*.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           set -o pipefail
@@ -57,6 +81,10 @@ jobs:
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             | tee build.log | grep -E '(error|warning: .*ScriptEngine|BUILD (SUCCEEDED|FAILED))' || (tail -200 build.log; exit 1)
+
+      - name: Ccache statistics
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Package .ipa
         run: |

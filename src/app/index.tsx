@@ -4,9 +4,17 @@ import { Alert, FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View
 
 import { ScriptTile } from '@/components/script-tile';
 import {
+  copyScript,
   deleteScript,
+  displayName,
+  extensionOf,
+  isApp,
+  isPython,
   isValidName,
+  keepExtension,
   listScripts,
+  NEW_MINIAPP,
+  NEW_PYTHON,
   NEW_SCRIPT,
   readScript,
   renameScript,
@@ -40,7 +48,9 @@ function askName(title: string, initial: string, onDone: (name: string) => void)
 }
 
 const openEditor = (name: string) => router.push({ pathname: '/script/[name]', params: { name } });
-const runScript = (name: string) => router.push({ pathname: '/run/[name]', params: { name } });
+// A miniapp opens on the whole screen; a script runs with its console.
+const runScript = (name: string) =>
+  isApp(name) ? router.push({ pathname: '/app/[name]', params: { name } }) : router.push({ pathname: '/run/[name]', params: { name } });
 
 export default function ScriptsScreen() {
   const [scripts, setScripts] = useState<ScriptFile[]>([]);
@@ -76,6 +86,25 @@ export default function ScriptsScreen() {
     });
   };
 
+  // A .jsx file unless the name ends in .tsx.
+  const createApp = () => {
+    askName('Nueva miniapp', uniqueName('Miniapp', '.jsx'), (typed) => {
+      const name = isApp(typed) ? typed : `${typed}.jsx`;
+      if (scripts.some((s) => s.name === name)) return Alert.alert('Ya existe un archivo con ese nombre');
+      writeScript(name, NEW_MINIAPP);
+      openEditor(name);
+    });
+  };
+
+  const createPython = () => {
+    askName('Nuevo script Python', uniqueName('Sin título', '.py'), (typed) => {
+      const name = isPython(typed) ? typed : `${typed}.py`;
+      if (scripts.some((s) => s.name === name)) return Alert.alert('Ya existe un archivo con ese nombre');
+      writeScript(name, NEW_PYTHON);
+      openEditor(name);
+    });
+  };
+
   const remove = (script: ScriptFile) => {
     Alert.alert(`¿Eliminar "${script.name}"?`, 'El archivo se borra de la carpeta de Scriptor.', [
       { text: 'Cancelar', style: 'cancel' },
@@ -89,9 +118,20 @@ export default function ScriptsScreen() {
       <Stack.SearchBar placeholder="Buscar scripts" onChangeText={(e) => setQuery(e.nativeEvent.text)} />
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button icon="book" accessibilityLabel="Documentación" onPress={() => router.push('/docs')} />
+        <Stack.Toolbar.Button icon="terminal" accessibilityLabel="Terminal" onPress={() => router.push('/terminal')} />
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="plus" accessibilityLabel="Nuevo script" variant="prominent" onPress={create} />
+        <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Nuevo" variant="prominent">
+          <Stack.Toolbar.MenuAction icon="doc.badge.plus" onPress={create}>
+            Nuevo script
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="app.badge" onPress={createApp}>
+            Nueva miniapp
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="chevron.left.forwardslash.chevron.right" onPress={createPython}>
+            Nuevo script Python
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <FlatList
         key={columns}
@@ -110,7 +150,7 @@ export default function ScriptsScreen() {
             <View style={styles.emptyBox}>
               <Text style={type.title}>Aún no hay scripts</Text>
               <Text style={[type.footnote, styles.center]}>
-                Crea uno aquí o copia archivos .js a Scriptor desde la app Archivos.
+                Crea uno aquí o copia archivos .js, .jsx o .py a Scriptor desde la app Archivos.
               </Text>
               <Pressable accessibilityRole="button" onPress={create} style={({ pressed }) => [styles.cta, pressed && { opacity: 0.7 }]}>
                 <Text style={styles.ctaText}>Crear script</Text>
@@ -150,13 +190,16 @@ export default function ScriptsScreen() {
                 <Link.MenuAction
                   title="Renombrar"
                   icon="pencil"
-                  onPress={() => askName('Renombrar', item.name, (to) => attempt(() => renameScript(item.name, to)))}
+                  onPress={() => askName('Renombrar', item.name, (to) => attempt(() => renameScript(item.name, keepExtension(item.name, to))))}
                 />
                 <Link.MenuAction
                   title="Duplicar"
                   icon="plus.square.on.square"
-                  onPress={() => attempt(() => writeScript(uniqueName(`${item.name} copia`), readScript(item.name)))}
+                  onPress={() =>
+                    attempt(() => writeScript(uniqueName(`${displayName(item.name)} copia`, extensionOf(item.name)), readScript(item.name)))
+                  }
                 />
+                <Link.MenuAction title="Copiar" icon="doc.on.doc" onPress={() => attempt(() => copyScript(item.name))} />
                 <Link.MenuAction title="Eliminar" icon="trash" destructive onPress={() => remove(item)} />
               </Link.Menu>
             </Link>

@@ -22,6 +22,9 @@ export default function RootLayout() {
           name="run/[name]"
           options={{ title: 'Ejecutar', presentation: 'modal', contentStyle: { backgroundColor: colors.raised } }}
         />
+        <Stack.Screen name="terminal" options={{ title: 'Terminal' }} />
+        {/* Miniapps draw the whole screen themselves. */}
+        <Stack.Screen name="app/[name]" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
         <Stack.Screen
           name="x-callback/[...path]"
           options={{ headerShown: false, presentation: 'transparentModal', animation: 'none' }}

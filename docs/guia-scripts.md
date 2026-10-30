@@ -19,6 +19,8 @@ Contenido:
 13. [Compatibilidad con Scriptable](#13-compatibilidad-con-scriptable)
 14. [Errores frecuentes](#14-errores-frecuentes)
 15. [Recetas](#15-recetas)
+16. [Miniapps (`.jsx` y `.tsx`)](#16-miniapps-jsx-y-tsx)
+17. [Python (`.py`)](#17-python-py)
 
 ---
 
@@ -34,7 +36,7 @@ console.log('Batería:', Math.round(info.battery * 100) + '%');
 await alert('Hola desde ' + Script.name());
 ```
 
-- **Cabecera.** La línea `// icon-color: …; icon-glyph: …;` fija el color y el icono del script en la rejilla. Usa el mismo formato que Scriptable, así que se conserva si llevas el script allí. Puedes cambiarlos manteniendo pulsado el script.
+- **Cabecera.** La línea `// icon-color: …; icon-glyph: …;` fija el color y el icono del script en la rejilla. Usa el mismo formato que Scriptable, así que se conserva si llevas el script allí. Puedes cambiarlos manteniendo pulsado el script. En ese mismo menú, **Copiar** pone el archivo en el portapapeles: en Archivos o Mail se pega como archivo y en un campo de texto como código.
 - **Resumen.** El primer comentario normal (`// …`) del principio del archivo aparece como descripción en la lista.
 - **`await` y `return` en el nivel superior.** Tu código se ejecuta dentro de una función `async`, así que puedes escribir `await` sin envolverlo en nada, y `return valor` termina el script y muestra ese valor como resultado.
 - **Aislamiento.** Cada ejecución tiene su propio motor de JavaScript (JavaScriptCore). Dos scripts no comparten variables, ni siquiera dos ejecuciones del mismo script.
@@ -770,6 +772,9 @@ Puedes usar las dos APIs en el mismo script. Las de Scriptor suelen ser más cor
 | Un `UI.view` no cambia al modificar el estado | Cambiar `s.x = …` redibuja, pero modificar algo *dentro* de un objeto o array (`s.lista.push(x)`) fuera de un control no se detecta. Llama a `ui.update()` después, o asigna de nuevo: `s.lista = [...s.lista, x]`. |
 | Un control vuelve a su valor anterior | Su función no actualiza el estado: `Toggle('Wi-Fi', s.wifi, (v) => s.wifi = v)`. Sin esa asignación la vista sigue dibujando el valor viejo. |
 | El vidrio de `glassEffect` apenas se ve | Sobre fondo blanco liso casi no se nota. Pon un `background` en `present()` o detrás de la vista, y en `List`/`Form` añade `.scrollContentBackground('hidden')`. |
+| Una miniapp muestra `[object Promise]` o un valor vacío | En las miniapps toda la API de Scriptor es asíncrona: `await FS.readText(p)`. |
+| `<div> no es un componente` en una miniapp | Usa los componentes (`<VStack>`, `<Text>`…). Para HTML, ponlo en un `<WebView html={…}>`. |
+| Un control de `UI.view` arrastra a otra vista con retraso | Los cambios ya se dibujan sin animación. Si la pantalla debe seguir al dedo con fluidez, hazla como miniapp `.jsx`, que corre dentro de la app. |
 | Un vídeo sale en negro o no abre con `UI.preview` | iOS no sabe decodificarlo (AV1 en iPhone anteriores al 15 Pro, MKV, WebM). Ábrelo con `Video.play(ruta)`. |
 
 ---
@@ -871,6 +876,229 @@ const r = await Video.play(path);
 console.log(r.ended ? 'Visto entero' : `Parado en ${Math.round(r.position)} s de ${Math.round(r.duration)} s`);
 ```
 
+## 16. Miniapps (`.jsx` y `.tsx`)
+
+Además de scripts `.js`, Scriptor ejecuta **miniapps**: archivos `.jsx` o `.tsx` escritos con React. Se dibujan con las vistas de SwiftUI (las mismas de `UI.view`) y Liquid Glass. A diferencia de `UI.view`, corren dentro de la app, así que la interfaz responde al momento: un botón que sigue al dedo o a un deslizador se mueve en el mismo fotograma.
+
+| | Script `.js` | Miniapp `.jsx` / `.tsx` |
+|---|---|---|
+| Para qué | Automatizar: descargar, convertir, procesar fotos, atajos | Pantallas interactivas que se quedan abiertas |
+| Interfaz | `alert`, `UITable`, `UI.view`, `WebView` | Componentes React (`<VStack>`, `<Button>`…) y `<WebView>` |
+| Llamadas a la API | Síncronas cuando se puede (`FS.readText(p)`) | Siempre con `await` (`await FS.readText(p)`) |
+| Termina | Cuando acaba su código | Cuando la cierras (agitar › Cerrar miniapp, o `close()`) |
+
+### Crear una
+
+Pulsa **+ › Nueva miniapp**. El archivo se crea con un ejemplo que funciona, y ▶︎ lo abre a pantalla completa. También puedes copiar archivos `.jsx` o `.tsx` a la carpeta de Scriptor desde Archivos. En la rejilla, cada archivo lleva una etiqueta con su tipo: **JS**, **JSX**, **TSX** o **PY**.
+
+Una miniapp exporta un componente por defecto:
+
+```jsx
+// icon-color: teal; icon-glyph: magic;
+export default function App() {
+  const [nombre, setNombre] = useState('');
+  const [veces, setVeces] = useStored('veces', 0);
+
+  return (
+    <Page>
+      <Text style="largeTitle" weight="bold">Hola{nombre ? ', ' + nombre : ''}</Text>
+      <TextField value={nombre} onChange={setNombre} placeholder="Tu nombre" />
+      <Card glass>
+        <Row label="Veces pulsado" value={veces} />
+        <Button title="Pulsar" icon="hand.tap" style="prominent" onPress={() => setVeces(veces + 1)} />
+      </Card>
+    </Page>
+  );
+}
+```
+
+- La cabecera `// icon-color: …; icon-glyph: …;` y el primer comentario funcionan igual que en los scripts.
+- En los `.tsx` puedes usar tipos de TypeScript; se quitan al ejecutar.
+- No hace falta importar nada: React, los componentes y la API ya están disponibles. Si prefieres importarlos, `import { useState } from 'react'` y `import { FS } from 'scriptor'` también funcionan.
+
+### Salir y menú
+
+Al abrirse, un aviso recuerda que hay que **agitar el iPhone** para ver el menú: Reiniciar, Editar, Consola y Cerrar miniapp. Desde el código, `close()` la cierra.
+
+Si la miniapp lanza un error (al dibujar, en un `onPress` o en una promesa sin capturar), la pantalla muestra el mensaje con su línea y botones para editar, reintentar o cerrar. Un bucle que no deja dibujar durante más de 3 segundos se detiene con un error en su línea.
+
+### Lo que tiene a mano
+
+| Nombre | Qué es |
+|---|---|
+| `useState`, `useEffect`, `useMemo`, `useRef`, `useCallback`, `useReducer`, `useContext` | Los hooks de React |
+| `useStored(clave, inicial)` | Como `useState`, pero el valor se guarda y sigue ahí la próxima vez |
+| `storage.get(clave, porDefecto)` / `set` / `remove` / `keys` / `clear` | Los mismos datos guardados, sin hook |
+| `FS`, `Net`, `Photos`, `Camera`, `Video`, `Audio`, `Speech`, `Pasteboard`, `Notify`, `Device`, `Keychain`, `Crypto`, `Location`, `Calendar`, `Contacts`, `Safari`, `Mail`, `Message`, `ShareSheet`, `QuickLook`, `Dictation`, `DocumentPicker`, `UI`, `Script` | La API de Scriptor de las secciones anteriores. Cada llamada devuelve una promesa |
+| `Scriptor` | Cualquier otra función global de Scriptor: `await Scriptor.Image.resize(ruta, { width: 400 })` |
+| `alert(mensaje, título?)`, `confirm(…)`, `prompt(mensaje, valor?, título?)` | Diálogos, como en los scripts |
+| `haptic(tipo?)` | Vibración: `'light'`, `'medium'`, `'heavy'`, `'success'`, `'warning'`, `'error'`, `'selection'` |
+| `input` | Los parámetros de `scriptor://app/Archivo.jsx?clave=valor` |
+| `console.log` / `warn` / `error` | Se ven en *agitar › Consola* |
+| `setTimeout`, `setInterval` | Se paran solos al cerrar la miniapp |
+| `fetch` | El de React Native; no pasa por Scriptor |
+| `close()` | Cierra la miniapp |
+| `SwiftUI`, `modifiers` | Las vistas y modificadores de `@expo/ui/swift-ui` sin adaptar, para lo que no cubren los componentes |
+
+Diferencias con los scripts al llamar a la API:
+
+- **Todo con `await`:** `const texto = await FS.readText('notas.txt')`.
+- **Las propiedades se leen llamándolas:** `await FS.documents()`, `await Pasteboard.text()`.
+- **Los callbacks funcionan:** `await Net.download(url, 'v.mp4', { onProgress: (p) => setProgreso(p.loaded / p.total) })`.
+- **Bytes y fechas llegan como tales:** `FS.readBytes` devuelve un `Uint8Array` y un `Date` llega como `Date`.
+- **Las clases con métodos no:** `new Request(…)`, `new WebView()`, `UITable` o `UI.view` solo existen en los scripts. En una miniapp usa `fetch`, `<WebView>` y los componentes.
+- **Las fotos y archivos se muestran por ruta:** `const [foto] = await Photos.pick()` y luego `<Image path={foto.path} />`.
+
+### Componentes
+
+Todos aceptan estas propiedades comunes:
+
+| Propiedad | Efecto |
+|---|---|
+| `padding` | Número o `{ top, bottom, leading, trailing, horizontal, vertical }` |
+| `width`, `height`, `minHeight`, `maxWidth`, `maxHeight` | Tamaño. `maxWidth={Infinity}` ocupa todo el ancho |
+| `fill` | Todo el ancho, con el contenido a la izquierda |
+| `frameAlignment` | Dónde queda el contenido en su marco: `'center'`, `'leading'`, `'topTrailing'`… |
+| `background` | Color de fondo |
+| `radius` | Esquinas redondeadas |
+| `glass` | Liquid Glass detrás: `true`, `'clear'` o `{ variant, tint, interactive, shape }`. Antes de iOS 26, un material translúcido |
+| `opacity`, `disabled` | Transparencia y desactivar |
+| `x`, `y`, `scale`, `rotation` | Mover, escalar o girar (en grados) sin cambiar el diseño |
+| `animation`, `animateOn` | Anima esos cambios cada vez que cambia `animateOn`: `animation="bouncy" animateOn={abierto}`. Sin `animateOn` nada se anima, así que lo que sigue al dedo va pegado a él |
+| `onTap`, `onLongPress` | Toque y pulsación larga en cualquier vista |
+| `modifiers` | Modificadores de SwiftUI sin adaptar: `modifiers={[modifiers.blur(4)]}` |
+
+Colores: `'accent'` (el color de la miniapp), `'primary'`, `'secondary'`, `'tertiary'`, `'danger'`, `'surface'`, `'background'`, los nombres de los colores de Scriptor (`'orange'`, `'deep-purple'`…) o cualquier color CSS (`'#FF8800'`, `'rgba(0,0,0,0.4)'`).
+
+| Componente | Propiedades propias |
+|---|---|
+| `<Text>` | `style` (`'largeTitle'`, `'title'`, `'headline'`, `'body'`, `'footnote'`, `'caption'`…), `size`, `weight`, `design`, `color`, `mono`, `align`, `lines`, `selectable` |
+| `<VStack>`, `<HStack>`, `<ZStack>` | `spacing`, `alignment` |
+| `<GlassGroup>` | `spacing`. Las vistas con `glass` de dentro se funden y se separan al moverse (iOS 26) |
+| `<Page>` | Columna desplazable con márgenes de página; `spacing`, `alignment` |
+| `<List>` y `<Section title footer>` | Lista agrupada de iOS, como Ajustes |
+| `<Card>` | Superficie redondeada; con `glass` es de vidrio |
+| `<Row label value icon color onPress>` | Etiqueta y valor en una línea; con `onPress` se puede tocar |
+| `<Button title icon style color onPress>` | `style`: `'prominent'`, `'glass'`, `'bordered'`, `'plain'`, `'destructive'` |
+| `<IconButton icon label prominent color onPress>` | Botón redondo de vidrio, solo con icono |
+| `<Image symbol size color>` / `<Image path mode>` | Símbolo de SF Symbols, o imagen de un archivo (`mode`: `'fit'` o `'fill'`) |
+| `<Toggle label icon value onChange>` | Interruptor |
+| `<Slider value min max step onChange>` | Deslizador |
+| `<Stepper label value min max step onChange>` | Contador con − y + |
+| `<TextField value onChange onSubmit placeholder multiline lines keyboard autocorrect plain>` | Campo de texto. `keyboard`: `'number'`, `'decimal'`, `'email'`, `'url'`, `'phone'` |
+| `<Picker value onChange options label style>` | `options`: valores o `{ label, value }`. `style`: `'menu'`, `'segmented'`, `'wheel'`, `'inline'` |
+| `<Progress value color>` | Barra de 0 a 1; sin `value`, un indicador de carga |
+| `<Empty title icon detail>` | Estado vacío de iOS |
+| `<Spacer>`, `<Divider>` | Espacio flexible y separador |
+| `<WebView url html baseURL onMessage onLoad inject ref>` | Una página web entre las vistas nativas (ver abajo) |
+
+### Combinar un `WebView` con controles nativos
+
+`<WebView>` muestra una página dentro de la miniapp y deja poner controles nativos y Liquid Glass encima o alrededor. La página llama a `window.sendToScript(valor)` y la miniapp lo recibe en `onMessage`. Con un `ref`, `web.current.run(js)` ejecuta código en la página, y `goBack()` y `reload()` navegan:
+
+```jsx
+export default function App() {
+  const web = useRef(null);
+  const [titulo, setTitulo] = useState('');
+
+  return (
+    <ZStack alignment="bottom" maxWidth={Infinity} maxHeight={Infinity}>
+      <WebView
+        ref={web}
+        url="https://es.wikipedia.org"
+        inject="window.addEventListener('load', () => sendToScript(document.title));"
+        onMessage={setTitulo}
+      />
+      <HStack spacing={12} padding={{ horizontal: 16, vertical: 10 }} glass>
+        <IconButton icon="chevron.left" label="Atrás" onPress={() => web.current.goBack()} />
+        <Text lines={1} maxWidth={200}>{titulo}</Text>
+        <IconButton icon="moon" label="Modo oscuro" prominent onPress={() => web.current.run("document.body.style.filter = 'invert(1) hue-rotate(180deg)'")} />
+      </HStack>
+    </ZStack>
+  );
+}
+```
+
+### Módulos e imports
+
+- **Tus archivos:** los que empiezan por `_` son módulos. `import { formatear } from './_util'` busca `_util.js`, `_util.jsx` o `_util.tsx` en la carpeta de Scriptor.
+- **Paquetes de npm:** `import dayjs from 'dayjs'` lo descarga de esm.sh (o de jsDelivr si esm.sh falla) la primera vez y lo guarda en `Library/miniapps/npm`, así que después funciona sin conexión. Hasta 3 MB por paquete.
+- **De la app:** `'react'`, `'scriptor'`, `'@expo/ui/swift-ui'` y `'@expo/ui/swift-ui/modifiers'`.
+
+Los datos de `useStored` y `storage` se guardan en `Library/miniapps/data/<archivo>.json`.
+
+### Abrir desde fuera
+
+`scriptor://app/Notas.jsx?nota=3` abre la miniapp desde Atajos o Safari, con `input.nota === '3'`.
+
+## 17. Python (`.py`)
+
+Los scripts `.py` se ejecutan como los `.js`: ▶︎ en la tarjeta o en el editor, la misma consola y el mismo botón de detener. Corren en [Pyodide](https://pyodide.org) (Python 3.13 compilado a WebAssembly) dentro de la app. Crea uno con **+ › Nuevo script Python**, o copia archivos `.py` a la carpeta de Scriptor desde Archivos. En la rejilla llevan la etiqueta **PY**.
+
+```python
+# icon-color: yellow; icon-glyph: code;
+# Lee un CSV, lo resume con pandas y guarda el resultado.
+import pandas as pd
+import scriptor
+from scriptor import alert
+
+ruta = await scriptor.pull('datos/ventas.csv')
+df = pd.read_csv(ruta)
+print(df.describe())
+
+df.groupby('mes').sum().to_csv('/home/pyodide/resumen.csv')
+print('Guardado en', await scriptor.push('/home/pyodide/resumen.csv', 'datos/resumen.csv'))
+await alert('Listo')
+```
+
+- **La primera vez** se descargan unos 12 MB (Python y su biblioteca estándar) y se guardan en el iPhone. Después arranca sin conexión. Python sigue cargado mientras la app está abierta, así que la segunda ejecución empieza al momento.
+- **Paquetes.** Los `import` de paquetes de la distribución de Pyodide (numpy, pandas, matplotlib, scipy, scikit-learn, opencv, pillow…) se descargan solos la primera vez y quedan guardados. Los demás se instalan con `pip install` en la Terminal (abajo).
+- **`await` en el nivel superior.** Como en JavaScript, puedes escribir `await` sin envolverlo en una función.
+- **`print()`** sale en la consola, y lo que se escribe en `stderr` sale como aviso. **`input('pregunta')`** abre un diálogo con un campo de texto.
+- **Cabecera y resumen.** La línea `# icon-color: …; icon-glyph: …;` guarda el color y el icono, y el primer comentario `# …` es el resumen de la tarjeta.
+- **Uno a la vez.** Los scripts de Python se ejecutan de uno en uno: si lanzas otro, espera a que acabe el anterior. Detener un script reinicia Python, así que también corta el que estuviera esperando.
+
+### La API de Scriptor desde Python
+
+El módulo `scriptor` da acceso a la misma API que los scripts `.js`. Cada llamada es asíncrona, así que lleva `await`:
+
+```python
+from scriptor import Device, FS, Net, Photos, Pasteboard, alert, confirm
+
+info = await Device.info()
+await FS.writeText('notas/hoy.txt', 'hola')
+fotos = await Photos.pick(limit=3)          # los argumentos con nombre van como opciones
+await Net.download(url, 'Descargas/v.mp4', onProgress=lambda p: print(p['loaded']))
+if await confirm('¿Copiar?'):
+    await Pasteboard.copy(info['model'])
+```
+
+- Los argumentos con nombre (`limit=3`) se juntan en el objeto de opciones del final.
+- Los diccionarios y listas llegan como `dict` y `list`, y los bytes como `bytes`.
+- Las funciones que pasas (`onProgress`) reciben valores de Python.
+- `scriptor.args` es `Script.input`: los parámetros de `scriptor://run/archivo.py?clave=valor`.
+
+### Archivos: `pull` y `push`
+
+`open()` de Python trabaja en una carpeta propia de Python, en memoria, que se borra al cerrar la app. Para usar archivos de Scriptor (los que ves en Archivos) cópialos de un lado a otro:
+
+- `ruta = await scriptor.pull('datos.csv')` copia un archivo de Documents a `/home/pyodide/datos.csv` y devuelve esa ruta. Con un segundo argumento eliges el destino.
+- `await scriptor.push('/home/pyodide/salida.png', 'Imagenes/salida.png')` copia de vuelta a Documents. Sin segundo argumento, va a la raíz con el mismo nombre.
+
+Para leer o escribir texto sin copiar nada, también sirve `await FS.readText(ruta)` / `await FS.writeText(ruta, texto)`.
+
+### Terminal
+
+El botón de terminal, arriba a la izquierda de la lista de scripts, abre una terminal de Python. Sirve para instalar paquetes y probar cosas, aparte de los scripts.
+
+- **`pip install paquete`** instala desde PyPI (con micropip). Solo funcionan paquetes en Python puro o que tengan versión para Pyodide: los que necesitan compilar código C al instalarse no. Lo instalado queda guardado y lo pueden importar todos los scripts `.py`. También hay `pip uninstall`, `pip list`, `pip show` y `pip freeze`.
+- **Python interactivo.** Lo que no es un comando se ejecuta como Python. Las variables se mantienen mientras la terminal está abierta, y el valor de la última expresión se muestra solo (`2 + 2` → `4`). Puedes pegar varias líneas a la vez.
+- **`python archivo.py a b`** ejecuta un script con argumentos: llegan en `sys.argv`.
+- **Archivos:** `ls`, `cd`, `pwd`, `cat`, `cp`, `mv`, `rm`, `mkdir`, `touch` sobre la carpeta de Scriptor. `clear` limpia la pantalla y `help` lista los comandos.
+- Si una variable se llama como un comando (`cat = 3`), esa línea es Python. Un `!` delante (`!cat notas.txt`) fuerza el comando.
+- iOS no deja ejecutar programas, así que no hay una shell de verdad (bash, git, gcc…): los comandos de arriba están hechos dentro de la app.
+- ⏹ detiene lo que se está ejecutando. Reinicia Python, así que se pierden las variables de la sesión.
+
 ## Mantener esta guía al día
 
-Las APIs se definen en [modules/script-engine/js/prelude.js](../modules/script-engine/js/prelude.js) (APIs de Scriptor) y [scriptable.js](../modules/script-engine/js/scriptable.js) (compatibilidad), sobre las funciones nativas de [modules/script-engine/ios](../modules/script-engine/ios). Al añadir o cambiar una función, actualiza también esta guía y la referencia corta de [src/lib/api-docs.ts](../src/lib/api-docs.ts), que alimenta la pantalla de documentación y el autocompletado del editor.
+Python corre en [PythonEngine.swift](../modules/script-engine/ios/PythonEngine.swift) con la página de [python-runtime.js](../modules/script-engine/js/python-runtime.js) y el módulo `scriptor` de [scriptor_py.py](../modules/script-engine/js/scriptor_py.py); la terminal es [src/app/terminal.tsx](../src/app/terminal.tsx). Las miniapps se ejecutan en [src/miniapp](../src/miniapp): `runtime.ts` (compilar y ejecutar), `components.tsx` (componentes), `screen.tsx` (pantalla y API) y `host.ts` (puente con Scriptor). Las APIs se definen en [modules/script-engine/js/prelude.js](../modules/script-engine/js/prelude.js) (APIs de Scriptor) y [scriptable.js](../modules/script-engine/js/scriptable.js) (compatibilidad), sobre las funciones nativas de [modules/script-engine/ios](../modules/script-engine/ios). Al añadir o cambiar una función, actualiza también esta guía y la referencia corta de [src/lib/api-docs.ts](../src/lib/api-docs.ts), que alimenta la pantalla de documentación y el autocompletado del editor.

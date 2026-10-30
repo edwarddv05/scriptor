@@ -44,12 +44,46 @@ ScriptEngine.addListener('onFinish', ({ runId, result, error }) => {
   }));
 });
 
-export function startRun(name: string, source: string, input: Record<string, unknown> = {}): string {
+function track(name: string): string {
   const runId = `${Date.now()}-${++counter}`;
   runs.set(runId, { runId, name, status: 'running', logs: [], startedAt: Date.now() });
   listeners.forEach((l) => l());
-  ScriptEngine.run(runId, `${name}.js`, source, input);
   return runId;
+}
+
+export function startRun(name: string, source: string, input: Record<string, unknown> = {}): string {
+  const runId = track(name);
+  // A .js script's name goes without its extension; a .py one keeps it and runs as Python.
+  ScriptEngine.run(runId, /\.py$/i.test(name) ? name : `${name}.js`, source, input);
+  return runId;
+}
+
+/** One line of the Python terminal; lines with the same session share their variables. */
+export function startPythonLine(session: string, code: string): string {
+  const runId = track('<terminal>');
+  ScriptEngine.pythonLine(runId, session, code);
+  return runId;
+}
+
+/** A pip command as its words: ['install', 'pandas']. */
+export function startPip(args: string[]): string {
+  const runId = track('<pip>');
+  ScriptEngine.pythonPip(runId, args);
+  return runId;
+}
+
+/** Resolves when the run ends, with its final state. */
+export function whenDone(runId: string): Promise<RunState> {
+  return new Promise((resolve) => {
+    const check = () => {
+      const run = runs.get(runId);
+      if (!run || run.status === 'running') return;
+      listeners.delete(check);
+      resolve(run);
+    };
+    listeners.add(check);
+    check();
+  });
 }
 
 export function stopRun(runId: string) {

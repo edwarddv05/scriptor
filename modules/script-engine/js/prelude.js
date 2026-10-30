@@ -741,6 +741,54 @@
   // @include scriptable.js
   // @include views.js
 
+  // ---------------------------------------------------------- miniapp host
+
+  // A .jsx miniapp runs in the app's React runtime, not here. Its calls to this API arrive as a
+  // global path ("FS.readText") and JSON arguments; the result goes back as JSON. Bytes travel
+  // as base64 and dates as ISO text, both tagged; Data and Image become their bytes or path.
+  // A function argument arrives as { __fn: n }: calling it sends its arguments back as an event.
+  function hostEncode(value) {
+    const tag = (v) => {
+      if (v && typeof v.__nativeValue === 'function') v = v.__nativeValue();
+      if (v instanceof Date) return { __date: v.toISOString() };
+      if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) return { __bytes: Base64.encode(v) };
+      return v;
+    };
+    // The replacer sees Date already turned into text by toJSON, so it reads the raw value from the holder.
+    return JSON.stringify(tag(value) ?? null, function (key, v) { return key === '' ? v : tag(this[key]); });
+  }
+  function hostDecode(text, id) {
+    return JSON.parse(text, (_key, v) => {
+      if (!v || typeof v !== 'object') return v;
+      if (typeof v.__bytes === 'string') return Base64.decode(v.__bytes);
+      if (typeof v.__date === 'string') return new Date(v.__date);
+      if (typeof v.__fn === 'number') {
+        const fn = v.__fn;
+        return (...xs) => { callSync('host.send', { id, kind: 'event', fn, value: hostEncode(xs) }); };
+      }
+      return v;
+    });
+  }
+  global.__hostCall = (id, request) => {
+    const send = (kind, value) => callSync('host.send', { id, kind, value });
+    Promise.resolve()
+      .then(() => {
+        const parts = String(request.path).split('.');
+        let owner = global;
+        let target = global;
+        for (const part of parts) {
+          if (target === undefined || target === null || !(part in Object(target))) throw new Error(`${request.path} no existe en Scriptor.`);
+          owner = target;
+          target = target[part];
+        }
+        return typeof target === 'function' ? target.apply(owner, hostDecode(request.args || '[]', id)) : target;
+      })
+      .then(
+        (value) => send('done', hostEncode(value)),
+        (err) => send('error', err instanceof Error ? err.message : inspect(err))
+      );
+  };
+
   global.__runMain = (fn) => {
     Promise.resolve()
       .then(fn)

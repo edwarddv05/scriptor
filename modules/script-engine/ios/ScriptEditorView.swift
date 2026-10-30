@@ -71,6 +71,7 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
     guard name != scriptName else { return }
     flush()
     scriptName = name
+    accessory.python = python
     let text = (try? String(contentsOf: Paths.script(name), encoding: .utf8)) ?? ""
     bypassDelegate = true
     textView.text = text
@@ -116,12 +117,14 @@ final class ScriptEditorView: ExpoView, UITextViewDelegate, NSTextStorageDelegat
 
   // MARK: Highlighting
 
+  private var python: Bool { scriptName?.lowercased().hasSuffix(".py") == true }
+
   func textStorage(_ storage: NSTextStorage, didProcessEditing mask: NSTextStorage.EditActions, range: NSRange, changeInLength delta: Int) {
     guard mask.contains(.editedCharacters) else { return }
     let string = storage.string as NSString
     // Small files are re-highlighted whole so multi-line comments and template strings stay right.
     let target = string.length < 40_000 ? NSRange(location: 0, length: string.length) : string.paragraphRange(for: range)
-    EditorTheme.highlight(storage, in: target)
+    EditorTheme.highlight(storage, in: target, python: python)
   }
 
   // MARK: Editing
@@ -357,18 +360,26 @@ enum EditorTheme {
   private static let stringsAndComments = regex(
     "//[^\\n]*|/\\*[\\s\\S]*?(\\*/|$)|\"(\\\\.|[^\"\\\\\\n])*\"?|'(\\\\.|[^'\\\\\\n])*'?|`(\\\\.|[^`\\\\])*`?")
 
-  static func highlight(_ storage: NSTextStorage, in range: NSRange) {
+  private static let pythonKeywords = regex(
+    "\\b(and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|while|with|yield)\\b")
+  private static let pythonLiterals = regex("\\b(True|False|None)\\b|\\b(0[xXbBoO][0-9a-fA-F_]+|\\d[\\d_]*(\\.\\d+)?([eE][+-]?\\d+)?j?)\\b")
+  private static let pythonCalls = regex("[A-Za-z_][\\w]*(?=\\s*\\()")
+  private static let pythonStringsAndComments = regex(
+    "#[^\\n]*|\"\"\"[\\s\\S]*?(\"\"\"|$)|'''[\\s\\S]*?('''|$)|\"(\\\\.|[^\"\\\\\\n])*\"?|'(\\\\.|[^'\\\\\\n])*'?")
+
+  static func highlight(_ storage: NSTextStorage, in range: NSRange, python: Bool = false) {
     let string = storage.string
     storage.setAttributes(baseAttributes, range: range)
     let italic = UIFont(descriptor: font.fontDescriptor.withSymbolicTraits(.traitItalic) ?? font.fontDescriptor, size: font.pointSize)
-    calls.enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: call, range: m.range) } }
+    let marker = python ? "#" : "/"
+    (python ? pythonCalls : calls).enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: call, range: m.range) } }
     types.enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: type, range: m.range) } }
-    keywords.enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: keyword, range: m.range) } }
-    literals.enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: number, range: m.range) } }
+    (python ? pythonKeywords : keywords).enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: keyword, range: m.range) } }
+    (python ? pythonLiterals : literals).enumerateMatches(in: string, range: range) { m, _, _ in if let m { storage.addAttribute(.foregroundColor, value: number, range: m.range) } }
     // Last, so keywords inside strings and comments lose their color.
-    stringsAndComments.enumerateMatches(in: string, range: range) { m, _, _ in
+    (python ? pythonStringsAndComments : stringsAndComments).enumerateMatches(in: string, range: range) { m, _, _ in
       guard let m else { return }
-      let isComment = (string as NSString).substring(with: NSRange(location: m.range.location, length: 1)) == "/"
+      let isComment = (string as NSString).substring(with: NSRange(location: m.range.location, length: 1)) == marker
       storage.addAttribute(.foregroundColor, value: isComment ? comment : EditorTheme.string, range: m.range)
       if isComment { storage.addAttribute(.font, value: italic, range: m.range) }
     }
@@ -390,6 +401,12 @@ final class EditorAccessoryBar: UIInputView {
   private var showingSuggestions = false
 
   private static let keys = ["⇥", "{", "}", "(", ")", "[", "]", ";", "=", "=>", "'", "\"", "`", ".", ",", ":", "!", "?", "&&", "||", "+", "-", "*", "/", "<", ">", "$", "await ", "const "]
+  private static let pythonKeys = ["⇥", "(", ")", "[", "]", "{", "}", ":", "=", "'", "\"", ".", ",", "_", "#", "+", "-", "*", "/", "<", ">", "%", "await ", "def ", "print("]
+
+  /// A Python file gets Python's symbols and a four-space tab.
+  var python = false {
+    didSet { if python != oldValue, !showingSuggestions { showKeys() } }
+  }
 
   init() {
     super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 48), inputViewStyle: .keyboard)
@@ -453,10 +470,11 @@ final class EditorAccessoryBar: UIInputView {
   private func showKeys() {
     showingSuggestions = false
     reset()
-    for key in Self.keys {
+    let tab = python ? "    " : "  "
+    for key in python ? Self.pythonKeys : Self.keys {
       let button = makeButton(title: key.trimmingCharacters(in: .whitespaces), mono: true, prominent: false)
       button.accessibilityLabel = key == "⇥" ? "Tabulador" : key
-      button.addAction(UIAction { [weak self] _ in self?.onInsert?(key == "⇥" ? "  " : key) }, for: .touchUpInside)
+      button.addAction(UIAction { [weak self] _ in self?.onInsert?(key == "⇥" ? tab : key) }, for: .touchUpInside)
       stack.addArrangedSubview(button)
     }
   }

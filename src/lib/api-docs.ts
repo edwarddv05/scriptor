@@ -140,6 +140,37 @@ export const API_DOCS: ApiSection[] = [
     ],
   },
   {
+    title: 'Miniapps (.jsx y .tsx)',
+    summary: 'Pantallas con React y vistas de SwiftUI que corren dentro de la app: responden al instante. Se crean con + › Nueva miniapp y se cierran agitando el iPhone.',
+    items: [
+      { name: 'export default function App', signature: 'export default function App() { return <VStack>…</VStack>; }', description: 'El componente que dibuja la miniapp. Los hooks de React, los componentes y la API ya están disponibles sin importar nada.' },
+      { name: 'useStored', signature: 'const [valor, setValor] = useStored(clave, inicial)', description: 'Como useState, pero el valor se guarda entre aperturas. Sin hook: storage.get(clave, porDefecto) / set / remove / keys / clear.' },
+      { name: 'await FS.readText', signature: 'await FS.readText(ruta) · await Photos.pick() · await Device.info()', description: 'La API de Scriptor, siempre con await. Las propiedades se leen llamándolas: await FS.documents(). Otras globales: await Scriptor.Image.resize(…).' },
+      { name: '<Text>', signature: "<Text style='title' weight='bold' color='secondary' mono lines={2}>…</Text>", description: "style: 'largeTitle', 'title', 'headline', 'body', 'footnote', 'caption'…" },
+      { name: '<VStack>', signature: '<VStack spacing alignment> / <HStack> / <ZStack> / <Page> / <List><Section title> / <Card glass>', description: 'Pilas, página desplazable, lista agrupada y tarjeta.' },
+      { name: '<Button>', signature: "<Button title icon style='prominent'|'glass'|'bordered'|'plain'|'destructive' onPress> / <IconButton icon prominent onPress>", description: 'Botones nativos con Liquid Glass en iOS 26. IconButton es redondo y solo lleva icono.' },
+      { name: '<Toggle>', signature: '<Toggle label value onChange> / <Slider value min max onChange> / <Stepper> / <Picker options> / <TextField value onChange>', description: 'Controles con value y onChange, como en React.' },
+      { name: '<WebView>', signature: '<WebView url | html onMessage inject ref> → ref.current.run(js)', description: 'Página web entre las vistas nativas. La página llama a sendToScript(valor) y onMessage lo recibe.' },
+      { name: 'glass', signature: "glass · glass='clear' · glass={{ tint, interactive, shape }} · <GlassGroup>", description: 'Liquid Glass detrás de cualquier vista. Otras propiedades comunes: padding, width, height, fill, background, radius, x, y, scale, rotation, onTap.' },
+      { name: 'animateOn', signature: "animation='bouncy'|'spring'|'easeInOut' animateOn={valor}", description: 'Anima los cambios de esa vista cuando cambia valor. Sin animateOn nada se anima.' },
+      { name: 'close', signature: "close() · haptic('success') · alert(msg) · confirm(msg) · prompt(msg, valor)", description: 'Cerrar la miniapp, vibración y diálogos.' },
+      { name: 'import', signature: "import dayjs from 'dayjs' · import { x } from './_util'", description: 'Paquetes de npm (se descargan una vez y se guardan) y tus archivos que empiezan por _.' },
+    ],
+  },
+  {
+    title: 'Python (.py)',
+    summary: 'Scripts de Python 3.13 (Pyodide) que se ejecutan con ▶︎ como los .js. Se crean con + › Nuevo script Python. La Terminal instala paquetes con pip.',
+    items: [
+      { name: 'from scriptor import', signature: 'from scriptor import FS, Device, Photos, alert · info = await Device.info()', description: 'La API de Scriptor, siempre con await. Los argumentos con nombre van como opciones: await Photos.pick(limit=3).' },
+      { name: 'scriptor.pull', signature: "ruta = await scriptor.pull('datos.csv') / await scriptor.push('/home/pyodide/out.png', 'out.png')", description: 'open() usa la carpeta propia de Python; pull copia de Documents a ella y push de vuelta.' },
+      { name: 'scriptor.args', signature: 'scriptor.args · sys.argv', description: 'Los parámetros de scriptor://run/archivo.py?clave=valor, y los argumentos de python archivo.py en la Terminal.' },
+      { name: 'input', signature: "print(…) · input('pregunta')", description: 'print sale en la consola; input abre un diálogo con campo de texto.' },
+      { name: 'import numpy', signature: 'import numpy, pandas, matplotlib, scipy, sklearn, cv2, PIL…', description: 'Los paquetes de Pyodide se descargan solos la primera vez y quedan guardados.' },
+      { name: 'pip install', signature: 'pip install paquete · pip list · pip uninstall · pip show · pip freeze', description: 'En la Terminal: instala desde PyPI paquetes en Python puro o con versión para Pyodide. Quedan para todos los scripts.' },
+      { name: 'Terminal', signature: 'ls · cd · pwd · cat · cp · mv · rm · mkdir · touch · python archivo.py · clear · help', description: 'Lo demás se ejecuta como Python y las variables duran mientras la terminal está abierta. !comando fuerza un comando.' },
+    ],
+  },
+  {
     title: 'Compatibilidad con Scriptable',
     summary: 'Las APIs de docs.scriptable.app funcionan tal cual. Los widgets se muestran como vista previa (sin instalarse) e iCloud usa la carpeta local.',
     items: [

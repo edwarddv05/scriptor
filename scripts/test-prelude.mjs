@@ -55,7 +55,9 @@ const sync = {
   'web.decide': (view, id, allow) => decided.push([view, id, allow]),
   'nview.update': (id, tree) => viewTrees.push(tree),
   'nview.close': () => {},
+  'host.send': (msg) => hostSent.push(JSON.parse(JSON.stringify(msg))),
 };
+const hostSent = [];
 const viewTrees = [];
 // Taps sent to the next UI.view while it is presented, then it closes.
 let viewEvents = [];
@@ -347,6 +349,32 @@ const tests = {
     assert.equal(last.children[5].props.text, 'hola');
     assert.equal(typeof ctx.VStack, 'function');
     assert.equal(ctx.Image.name, 'Image');
+  },
+  async 'miniapp host calls'() {
+    const call = async (id, path, args) => {
+      ctx.__hostCall(id, { path, args: JSON.stringify(args) });
+      for (let i = 0; i < 50 && !hostSent.some((m) => m.id === id && m.kind !== 'event'); i++) await new Promise((r) => setTimeout(r, 5));
+      return hostSent.find((m) => m.id === id && m.kind !== 'event');
+    };
+    let r = await call(1, 'FS.writeText', ['host/a.txt', 'hola']);
+    assert.equal(r.kind, 'done');
+    r = await call(2, 'FS.readText', ['host/a.txt']);
+    assert.deepEqual([r.kind, JSON.parse(r.value)], ['done', 'hola']);
+    r = await call(3, 'FS.readBytes', ['host/a.txt']);
+    assert.deepEqual(JSON.parse(r.value), { __bytes: Buffer.from('hola').toString('base64') });
+    r = await call(4, 'FS.writeBytes', ['host/b.bin', { __bytes: Buffer.from([1, 2, 3]).toString('base64') }]);
+    assert.equal(r.kind, 'done');
+    assert.deepEqual([...fs.readFileSync(path.join(docs, 'host/b.bin'))], [1, 2, 3]);
+    r = await call(5, 'Nope.thing', []);
+    assert.deepEqual([r.kind, r.value], ['error', 'Nope.thing no existe en Scriptor.']);
+    r = await call(6, 'Video.play', ['a.mp4', { loop: true }]);
+    assert.equal(JSON.parse(r.value).position, 3);
+    // Defined in the script's realm, where its dates come from.
+    vm.runInContext('globalThis.__probe = { at: (cb) => { cb(new Date(0), 2); return new Date(5); } }', ctx);
+    r = await call(7, '__probe.at', [{ __fn: 0 }]);
+    assert.deepEqual(JSON.parse(r.value), { __date: new Date(5).toISOString() });
+    const ev = hostSent.find((m) => m.id === 7 && m.kind === 'event');
+    assert.deepEqual([ev.fn, JSON.parse(ev.value)], [0, [{ __date: new Date(0).toISOString() }, 2]]);
   },
 };
 

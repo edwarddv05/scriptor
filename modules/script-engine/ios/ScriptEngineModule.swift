@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import UIKit
 
 public class ScriptEngineModule: Module {
   private var runs: [String: ScriptRun] = [:]
@@ -8,7 +9,7 @@ public class ScriptEngineModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ScriptEngine")
 
-    Events("onLogs", "onFinish")
+    Events("onLogs", "onFinish", "onHost")
 
     Constant("documentsPath") { Paths.documents.path }
 
@@ -24,6 +25,9 @@ public class ScriptEngineModule: Module {
     // MARK: Running
 
     Function("run") { (runId: String, name: String, source: String, input: [String: Any]?) in
+      if name.lowercased().hasSuffix(".py") {
+        return self.runPython(id: runId, name: name, source: source, input: input ?? [:], repl: false)
+      }
       let run = ScriptRun(
         id: runId, name: name, source: source, input: input ?? [:],
         onLogs: { [weak self] logs in
@@ -46,11 +50,65 @@ public class ScriptEngineModule: Module {
       run.start()
     }
 
+    // MARK: Miniapp host
+
+    // A .jsx miniapp runs in the app's React runtime. To reach Scriptor's API it keeps a script
+    // run alive in the background (its main never settles) and sends calls to it by global path.
+    Function("hostStart") { (runId: String, name: String) in
+      let run = ScriptRun(
+        id: runId, name: name, source: "await new Promise(() => {});", input: [:],
+        onLogs: { [weak self] logs in
+          self?.sendEvent("onLogs", ["runId": runId, "logs": logs])
+        },
+        onFinish: { [weak self] run, _, error in
+          guard let self else { return }
+          self.lock.lock()
+          self.runs[run.id] = nil
+          self.lock.unlock()
+          var body: [String: Any] = ["runId": run.id]
+          if let error { body["error"] = error }
+          self.sendEvent("onFinish", body)
+        }
+      )
+      run.onHost = { [weak self] message in
+        var body = message
+        body["runId"] = runId
+        self?.sendEvent("onHost", body)
+      }
+      self.lock.lock()
+      self.runs[runId] = run
+      self.lock.unlock()
+      run.start()
+    }
+
+    Function("hostCall") { (runId: String, callId: Int, path: String, args: String) in
+      self.lock.lock()
+      let run = self.runs[runId]
+      self.lock.unlock()
+      guard let run else {
+        self.sendEvent("onHost", ["runId": runId, "id": callId, "kind": "error", "value": "La miniapp ya no tiene acceso a Scriptor."])
+        return
+      }
+      run.invoke("__hostCall", callId, ["path": path, "args": args])
+    }
+
     Function("stop") { (runId: String) in
       self.lock.lock()
       let run = self.runs[runId]
       self.lock.unlock()
-      run?.stop()
+      if let run { run.stop() } else { PythonEngine.shared.stop(runId) }
+    }
+
+    // One line of the Python terminal. Lines with the same `session` share their variables;
+    // the output arrives as onLogs and the end as onFinish, both with `runId`.
+    Function("pythonLine") { (runId: String, session: String, code: String) in
+      self.runPython(id: runId, name: "<terminal>", source: code, input: [:], repl: true, session: session)
+    }
+
+    // A pip command from the terminal, as its words: ["install", "pandas"].
+    Function("pythonPip") { (runId: String, args: [String]) in
+      let list = args.map(Self.pythonString).joined(separator: ", ")
+      self.runPython(id: runId, name: "<pip>", source: "import _scriptor\nawait _scriptor._pip([\(list)])", input: [:], repl: false)
     }
 
     // MARK: Script files (Documents/*.js, visible in the Files app)
@@ -61,11 +119,14 @@ public class ScriptEngineModule: Module {
         at: Paths.documents, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
         options: [.skipsHiddenFiles])) ?? []
       return urls
-        .filter { $0.pathExtension.lowercased() == "js" }
+        .filter { ["js", "jsx", "tsx", "py"].contains($0.pathExtension.lowercased()) }
         .map { url in
           let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+          // Miniapps (.jsx, .tsx) and Python scripts keep their extension in the name; .js scripts go without it.
+          let ext = url.pathExtension.lowercased()
           var item: [String: Any] = [
-            "name": url.deletingPathExtension().lastPathComponent,
+            "name": ext == "js" ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent,
+            "app": ext == "jsx" || ext == "tsx",
             "modified": (values?.contentModificationDate ?? Date()).timeIntervalSince1970 * 1000,
             "size": values?.fileSize ?? 0,
           ]
@@ -86,6 +147,18 @@ public class ScriptEngineModule: Module {
       try FileManager.default.removeItem(at: Paths.script(name))
     }
 
+    // Puts the file on the pasteboard: Files and Mail paste it as the file, text fields as its code.
+    Function("copyScript") { (name: String) throws in
+      let url = Paths.script(name)
+      let text = try String(contentsOf: url, encoding: .utf8)
+      let provider = NSItemProvider(contentsOf: url) ?? NSItemProvider()
+      provider.suggestedName = url.lastPathComponent
+      provider.registerObject(text as NSString, visibility: .all)
+      DispatchQueue.main.async {
+        UIPasteboard.general.setItemProviders([provider], localOnly: false, expirationDate: nil)
+      }
+    }
+
     Function("renameScript") { (from: String, to: String) throws in
       let target = Paths.script(to)
       if FileManager.default.fileExists(atPath: target.path) {
@@ -93,6 +166,27 @@ public class ScriptEngineModule: Module {
       }
       try FileManager.default.moveItem(at: Paths.script(from), to: target)
     }
+  }
+
+  /// Python runs report through the same onLogs/onFinish events as JavaScript runs.
+  private func runPython(id: String, name: String, source: String, input: [String: Any], repl: Bool, session: String? = nil) {
+    PythonEngine.shared.run(
+      id: id, name: name, source: source, input: input, repl: repl, session: session,
+      onLogs: { [weak self] logs in self?.sendEvent("onLogs", ["runId": id, "logs": logs]) },
+      onFinish: { [weak self] result, error in
+        var body: [String: Any] = ["runId": id]
+        if let result { body["result"] = result }
+        if let error { body["error"] = error }
+        self?.sendEvent("onFinish", body)
+      }
+    )
+  }
+
+  /// A Python string literal of `text`, for code built here.
+  private static func pythonString(_ text: String) -> String {
+    let data = (try? JSONSerialization.data(withJSONObject: [text], options: .withoutEscapingSlashes)) ?? Data("[\"\"]".utf8)
+    // A JSON string is a valid Python string literal.
+    return String(String(decoding: data, as: UTF8.self).dropFirst().dropLast())
   }
 }
 
@@ -109,7 +203,9 @@ enum Paths {
   static var temp: URL { FileManager.default.temporaryDirectory }
 
   static func script(_ name: String) -> URL {
-    documents.appendingPathComponent(name.hasSuffix(".js") ? name : name + ".js")
+    let lower = name.lowercased()
+    let kept = lower.hasSuffix(".js") || lower.hasSuffix(".jsx") || lower.hasSuffix(".tsx") || lower.hasSuffix(".py")
+    return documents.appendingPathComponent(kept ? name : name + ".js")
   }
 
   /// Relative paths resolve against Documents; absolute paths are used as they are.
@@ -146,10 +242,13 @@ enum ScriptHeader {
     var result: [String: Any] = [:]
     for line in head.split(separator: "\n", omittingEmptySubsequences: true).prefix(12) {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      guard trimmed.hasPrefix("//") else {
+      // Python comments start with "#"; a "#!" first line is skipped.
+      let marker = trimmed.hasPrefix("//") ? 2 : trimmed.hasPrefix("#!") ? -1 : trimmed.hasPrefix("#") ? 1 : 0
+      if marker == -1 { continue }
+      guard marker > 0 else {
         if !trimmed.isEmpty { break } else { continue }
       }
-      let body = trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
+      let body = trimmed.dropFirst(marker).trimmingCharacters(in: .whitespaces)
       if body.contains("icon-color:") || body.contains("icon-glyph:") {
         for part in body.split(separator: ";") {
           let pair = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }

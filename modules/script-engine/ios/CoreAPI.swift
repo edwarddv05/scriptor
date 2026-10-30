@@ -11,6 +11,12 @@ enum CoreAPI {
       return nil
     }
 
+    // A miniapp host run reports results and callback calls to the app (see __hostCall).
+    r.sync("host.send") { run, a in
+      run.onHost?(a.dict(0))
+      return nil
+    }
+
     r.sync("timer.set") { run, a in
       run.setTimer(id: a.int(0, 0), ms: a.double(1, 0), repeats: a.bool(2, false))
       return nil

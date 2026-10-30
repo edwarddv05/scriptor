@@ -39,6 +39,9 @@ final class ScriptRun {
   private var logFlushScheduled = false
   private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
+  /// Set for a miniapp host run: receives each result or callback the prelude sends back.
+  var onHost: (([String: Any]) -> Void)?
+
   private let onLogs: ([[String: Any]]) -> Void
   private let onFinish: (ScriptRun, String?, String?) -> Void
 
