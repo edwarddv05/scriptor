@@ -966,6 +966,8 @@ Todos aceptan estas propiedades comunes:
 | `x`, `y`, `scale`, `rotation` | Mover, escalar o girar (en grados) sin cambiar el diseño |
 | `animation`, `animateOn` | Anima esos cambios cada vez que cambia `animateOn`: `animation="bouncy" animateOn={abierto}`. Sin `animateOn` nada se anima, así que lo que sigue al dedo va pegado a él |
 | `onTap`, `onLongPress` | Toque y pulsación larga en cualquier vista |
+| `onTapAt`, `onDoubleTap`, `onHold`, `onSwipe`, `onDrag`, `zoom` | Gestos: ver [Gestos](#gestos) |
+| `rotation3D` | Giro en 3D en grados (eje `y` por defecto) o `{ angle, axis, anchor, perspective }`, para voltear tarjetas o un cubo entre páginas |
 | `modifiers` | Modificadores de SwiftUI sin adaptar: `modifiers={[modifiers.blur(4)]}` |
 
 Colores: `'accent'` (el color de la miniapp), `'primary'`, `'secondary'`, `'tertiary'`, `'danger'`, `'surface'`, `'background'`, los nombres de los colores de Scriptor (`'orange'`, `'deep-purple'`…) o cualquier color CSS (`'#FF8800'`, `'rgba(0,0,0,0.4)'`).
@@ -982,6 +984,8 @@ Colores: `'accent'` (el color de la miniapp), `'primary'`, `'secondary'`, `'tert
 | `<Button title icon style color onPress>` | `style`: `'prominent'`, `'glass'`, `'bordered'`, `'plain'`, `'destructive'` |
 | `<IconButton icon label prominent color onPress>` | Botón redondo de vidrio, solo con icono |
 | `<Image symbol size color>` / `<Image path mode>` | Símbolo de SF Symbols, o imagen de un archivo (`mode`: `'fit'` o `'fill'`) |
+| `<Image url headers mode ratio placeholder onLoad onError>` | Imagen de internet, guardada en disco (ver [Imágenes y vídeo de internet](#imágenes-y-vídeo-de-internet)) |
+| `<Video url headers playing muted loop controls mode ratio rate ref>` | Vídeo dentro de la pantalla (ver abajo) |
 | `<Toggle label icon value onChange>` | Interruptor |
 | `<Slider value min max step onChange>` | Deslizador |
 | `<Stepper label value min max step onChange>` | Contador con − y + |
@@ -991,6 +995,76 @@ Colores: `'accent'` (el color de la miniapp), `'primary'`, `'secondary'`, `'tert
 | `<Empty title icon detail>` | Estado vacío de iOS |
 | `<Spacer>`, `<Divider>` | Espacio flexible y separador |
 | `<WebView url html baseURL onMessage onLoad inject ref>` | Una página web entre las vistas nativas (ver abajo) |
+
+### Imágenes y vídeo de internet
+
+`<Image url>` descarga la imagen una vez y la guarda en el iPhone (hasta 500 MB; se borran primero las que llevan más tiempo sin usarse). En pantalla se decodifica al tamaño en que se dibuja, así que una cuadrícula de cientos de fotos no llena la memoria.
+
+```jsx
+<Image url={post.thumbnail} headers={{ Referer: 'https://example.com/' }} mode="fill" ratio={1} radius={4} />
+<Image url={perfil.foto} width={88} height={88} mode="fill" radius={44} />
+<Image url={foto.url} fill onLoad={({ width, height }) => console.log(width, height)} />
+```
+
+- `mode="fit"` (por defecto) muestra la imagen entera. Sin `ratio` ni tamaño, toma sus propias proporciones al cargarse, como una imagen web con ancho 100 %.
+- `mode="fill"` cubre el marco y recorta lo que sobra. Necesita un tamaño: `width`/`height`, o `ratio` con el ancho del padre.
+- `headers` va en la petición: `Referer`, `Cookie`, `User-Agent`…
+- Mientras carga se ve un fondo gris suave, o el color de `placeholder`. Al llegar, aparece con un fundido.
+- `prefetchImages(urls, headers)` descarga por adelantado (las siguientes stories, por ejemplo) sin dibujarlas.
+
+`<Video>` reproduce dentro de la pantalla, con `AVPlayer`. Sirve un vídeo de internet (MP4 o HLS, con `headers`) o un archivo (`'Descargas/v.mp4'`).
+
+```jsx
+const video = useRef(null);
+const [playing, setPlaying] = useState(true);
+const [time, setTime] = useState({ now: 0, total: 0 });
+
+<ZStack>
+  <Video ref={video} url={reel.video} headers={HEADERS} playing={playing} muted={muted} loop mode="fill" ratio={9 / 16}
+    onProgress={(now, total) => setTime({ now, total })} onEnd={siguiente} />
+  <HStack padding={16} spacing={12} frameAlignment="bottom" fill>
+    <IconButton icon={playing ? 'pause.fill' : 'play.fill'} onPress={() => setPlaying(!playing)} />
+    <IconButton icon="gobackward.5" onPress={() => video.current.seek(Math.max(0, time.now - 5))} />
+    <Progress value={time.total ? time.now / time.total : 0} fill />
+  </HStack>
+</ZStack>
+```
+
+- `playing` (por defecto `true`) y `muted` lo controlan. Al salir de la pantalla se pausa solo.
+- `loop` vuelve a empezar al terminar; si no, se llama a `onEnd`.
+- `controls` muestra los controles del sistema (barra, AirPlay, pantalla completa). Sin ellos, dibujas los tuyos encima.
+- `mode`: `'fit'` o `'fill'`. Sin `width`, `height` ni `ratio`, ocupa el espacio que le dan.
+- `rate` es la velocidad (1 = normal); `ref.current.seek(segundos)` salta.
+- Eventos: `onReady({ duration, width, height })`, `onProgress(segundo, duración)` cuatro veces por segundo, `onBuffering(true/false)`, `onEnd()` y `onError(mensaje)`.
+- Cada `<Video>` es un reproductor: ten pocos a la vez. En un visor de stories, uno para la actual y quizá otro para la siguiente con `playing={false}`, que se va cargando.
+
+### Gestos
+
+Funcionan en cualquier vista, igual que `onTap`. Todos son de SwiftUI: la vista sigue al dedo sin esperar a tu código.
+
+| Propiedad | Qué hace |
+|---|---|
+| `onTapAt={(e) => …}` | Toque con su posición: `{ x, y, width, height }`. Para saber si fue en el tercio izquierdo o derecho |
+| `onDoubleTap` | Doble toque. Si la vista también tiene `onTap`, el toque simple espera un momento por si llega el segundo |
+| `onHold={(pulsando) => …}` | `true` al apoyar el dedo, `false` al soltarlo: mantener para pausar |
+| `onSwipe={(dir) => …}` | Deslizamiento rápido: `'left'`, `'right'`, `'up'` o `'down'`. No impide desplazar una lista |
+| `onDrag={(e) => …}` + `drag={{ axis, follow, live }}` | La vista sigue al dedo (en `axis`: `'x'`, `'y'` o `'both'`) y vuelve con un muelle al soltar. `e.phase` es `'start'`, `'change'` (solo con `live: true`) o `'end'`; trae `translation`, `predicted` (hacia dónde iba con el impulso) y `location` |
+| `zoom` | Pellizcar para ampliar, mover mientras está ampliado y doble toque. `zoom={{ mode: 'peek' }}` vuelve a su tamaño al soltar, como una foto del feed. También `maxScale` (4) y `onZoom(escala)` |
+
+Un visor de stories, por ejemplo:
+
+```jsx
+<ZStack
+  onTapAt={({ x, width }) => (x < width / 3 ? anterior() : siguiente())}
+  onHold={(pulsando) => setPausado(pulsando)}
+  onDrag={({ phase, predicted }) => phase === 'end' && predicted.y > 200 && close()}
+  drag={{ axis: 'y' }}
+  rotation3D={giro} animation="smooth" animateOn={giro}>
+  <Image url={story.imagen} mode="fill" fill height={800} />
+</ZStack>
+```
+
+Para el giro de cubo entre cuentas, cambia `rotation3D` de `0` a `-90` (o `90`) con `animateOn`, y luego cambia de cuenta con `rotation3D` a `0`.
 
 ### Combinar un `WebView` con controles nativos
 

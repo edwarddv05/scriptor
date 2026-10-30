@@ -64,10 +64,13 @@ import {
   textInputAutocapitalization,
   textSelection,
   tint,
+  createModifier,
+  createModifierWithEventListener,
   type ModifierConfig,
 } from '@expo/ui/swift-ui/modifiers';
+import { requireNativeModule, requireNativeView } from 'expo';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
-import React, { createContext, useContext, useEffect, useImperativeHandle, useRef, type ReactNode, type Ref } from 'react';
+import React, { createContext, useContext, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { PlatformColor, type ColorValue } from 'react-native';
 import { WebView as RNWebView, type WebViewMessageEvent, type WebViewProps } from 'react-native-webview';
 import type { SFSymbol } from 'sf-symbols-typescript';
@@ -102,6 +105,10 @@ export function resolveColor(value: unknown, accent: string): ColorValue | undef
 type FrameAlignment = 'center' | 'leading' | 'trailing' | 'top' | 'bottom' | 'topLeading' | 'topTrailing' | 'bottomLeading' | 'bottomTrailing';
 type AnimationKind = 'default' | 'spring' | 'bouncy' | 'smooth' | 'snappy' | 'easeInOut' | 'easeIn' | 'easeOut' | 'linear';
 type GlassShape = 'capsule' | 'circle' | 'rectangle' | 'roundedRectangle';
+type Point = { x: number; y: number };
+export type DragEvent = { phase: 'start' | 'change' | 'end'; translation: Point; predicted: Point; location: Point };
+export type TapEvent = { x: number; y: number; width: number; height: number };
+type Rotation3D = number | { angle: number; axis?: 'x' | 'y' | 'z'; anchor?: 'center' | 'leading' | 'trailing' | 'top' | 'bottom'; perspective?: number };
 type Glass = boolean | 'regular' | 'clear' | { variant?: 'regular' | 'clear'; tint?: string; interactive?: boolean; shape?: GlassShape };
 
 export type ViewProps = {
@@ -122,6 +129,21 @@ export type ViewProps = {
   disabled?: boolean;
   onTap?: () => void;
   onLongPress?: () => void;
+  /** Tap with where it landed and the view's size: tell the left third from the right. */
+  onTapAt?: (event: TapEvent) => void;
+  onDoubleTap?: () => void;
+  /** true on touch down, false on release: hold to pause. */
+  onHold?: (pressing: boolean) => void;
+  /** A flick: 'left', 'right', 'up' or 'down'. Lists keep scrolling. */
+  onSwipe?: (direction: 'left' | 'right' | 'up' | 'down') => void;
+  /** The view follows the finger and springs back; "end" says how far and where it was heading. */
+  onDrag?: (event: DragEvent) => void;
+  /** axis: 'x' | 'y' | 'both'; follow: false keeps the view still; live: also send 'change'. */
+  drag?: { axis?: 'x' | 'y' | 'both'; follow?: boolean; live?: boolean; minimumDistance?: number };
+  /** Pinch to zoom, pan and double tap. 'peek' springs back on release, like a feed photo. */
+  zoom?: boolean | { mode?: 'zoom' | 'peek'; maxScale?: number; doubleTap?: boolean; onZoom?: (scale: number) => void };
+  /** Degrees around an axis (y by default), for flips and a cube between pages. */
+  rotation3D?: Rotation3D;
   /** Moves the view by this many points without changing the layout. */
   x?: number;
   y?: number;
@@ -187,10 +209,32 @@ export function common(props: ViewProps, accent: string): ModifierConfig[] {
   if (props.x !== undefined || props.y !== undefined) result.push(offset({ x: props.x ?? 0, y: props.y ?? 0 }));
   if (props.scale !== undefined) result.push(scaleEffect(props.scale));
   if (props.rotation !== undefined) result.push(rotationEffect(props.rotation));
-  if (props.onTap) result.push(onTapGesture(props.onTap));
-  if (props.onLongPress) result.push(onLongPressGesture(props.onLongPress));
+  if (props.rotation3D !== undefined) {
+    const turn = typeof props.rotation3D === 'number' ? { angle: props.rotation3D } : props.rotation3D;
+    result.push(createModifier('scriptorRotation3D', turn));
+  }
+  result.push(...gestureModifiers(props));
   if (props.animateOn !== undefined) result.push(animation(animationFor(props.animation), animatedValue(props.animateOn)));
   return Array.isArray(props.modifiers) ? [...result, ...props.modifiers] : result;
+}
+
+// Gestures come after the look, so dragging or zooming moves the glass and background too.
+function gestureModifiers(props: ViewProps): ModifierConfig[] {
+  const result: ModifierConfig[] = [];
+  if (props.zoom) {
+    const { onZoom, ...params } = typeof props.zoom === 'object' ? props.zoom : {};
+    result.push(createModifierWithEventListener('scriptorZoom', (e: { scale: number }) => onZoom?.(e.scale), params));
+  }
+  const { onDrag, onSwipe, onHold, onDoubleTap, onTapAt } = props;
+  if (onDrag) result.push(createModifierWithEventListener('scriptorDrag', (e: DragEvent) => onDrag(e), props.drag ?? {}));
+  if (onSwipe) result.push(createModifierWithEventListener('scriptorSwipe', (e: { direction: 'left' | 'right' | 'up' | 'down' }) => onSwipe(e.direction)));
+  if (onHold) result.push(createModifierWithEventListener('scriptorPress', (e: { pressing?: boolean }) => e.pressing !== undefined && onHold(e.pressing)));
+  // The double tap goes first, so a single tap waits to see whether a second one follows.
+  if (onDoubleTap) result.push(createModifierWithEventListener('scriptorTapAt', () => onDoubleTap(), { count: 2 }));
+  if (onTapAt) result.push(createModifierWithEventListener('scriptorTapAt', (e: TapEvent) => onTapAt(e), { count: 1 }));
+  if (props.onTap) result.push(onTapGesture(props.onTap));
+  if (props.onLongPress) result.push(onLongPressGesture(props.onLongPress));
+  return result;
 }
 
 const useAccent = () => useContext(TintContext);
@@ -327,14 +371,152 @@ function IconButton({ icon, label, onPress, prominent, color, ...rest }: ViewPro
   );
 }
 
-/** An SF Symbol (`symbol`) or an image file (`path`, as Photos.pick and FS return them). */
-function Image({ symbol, path, size = 22, color, mode = 'fit', ...rest }: ViewProps & { symbol?: string; path?: string; size?: number; color?: string; mode?: 'fit' | 'fill' }) {
+type ImageProps = ViewProps & {
+  symbol?: string;
+  path?: string;
+  /** An image on the internet, downloaded once and kept on disk. A path also works. */
+  url?: string;
+  headers?: Record<string, string>;
+  /** Width / height. Without it, 'fit' takes the image's proportions once loaded and 'fill' takes the frame it is given. */
+  ratio?: number;
+  placeholder?: string;
+  onLoad?: (size: { width: number; height: number }) => void;
+  onError?: (message: string) => void;
+  size?: number;
+  color?: string;
+  mode?: 'fit' | 'fill';
+};
+
+/** An SF Symbol (`symbol`), an image file (`path`, as Photos.pick and FS return them) or one from the internet (`url`). */
+function Image({ symbol, path, url, headers, ratio, placeholder, onLoad, onError, size = 22, color, mode = 'fit', ...rest }: ImageProps) {
   const accent = useAccent();
+  if (url) {
+    const modifiers = common(rest, accent);
+    return (
+      <RemoteImageView
+        url={url}
+        headers={headers ?? {}}
+        mode={mode}
+        ratio={ratio}
+        placeholder={resolveColor(placeholder, accent)}
+        onLoad={onLoad ? (e) => onLoad(e.nativeEvent) : undefined}
+        onError={onError ? (e) => onError(e.nativeEvent.message) : undefined}
+        modifiers={modifiers}
+        {...modifierEvents(modifiers)}
+      />
+    );
+  }
   if (path) {
     const uri = path.startsWith('file://') ? path : `file://${path}`;
     return <NativeImage uiImage={uri} modifiers={[resizable(), aspectRatio({ contentMode: mode }), ...common(rest, accent), clipped()]} />;
   }
   return <NativeImage systemName={(symbol ?? 'questionmark') as SFSymbol} modifiers={[font({ size }), foregroundStyle(resolveColor(color, accent) ?? NAMED.primary), ...common(rest, accent)]} />;
+}
+
+// This app's own SwiftUI views (MiniappViews.swift) get modifier events the way @expo/ui's do.
+type NativeEvent<T> = { nativeEvent: T };
+type ModifierEvents = { onGlobalEvent?: (event: NativeEvent<Record<string, unknown>>) => void };
+
+function modifierEvents(modifiers: ModifierConfig[]): ModifierEvents {
+  const listeners: Record<string, (args: any) => void> = {};
+  for (const modifier of modifiers) if (modifier.eventListener) listeners[modifier.$type] = modifier.eventListener;
+  if (!Object.keys(listeners).length) return {};
+  return {
+    onGlobalEvent: ({ nativeEvent }) => {
+      for (const [name, params] of Object.entries(nativeEvent)) listeners[name]?.(params);
+    },
+  };
+}
+
+type RemoteImageNativeProps = ModifierEvents & {
+  url: string;
+  headers: Record<string, string>;
+  mode: string;
+  ratio?: number;
+  placeholder?: ColorValue;
+  onLoad?: (event: NativeEvent<{ width: number; height: number }>) => void;
+  onError?: (event: NativeEvent<{ message: string }>) => void;
+  modifiers: ModifierConfig[];
+};
+const RemoteImageView = requireNativeView<RemoteImageNativeProps>('ScriptorUI', 'RemoteImageView');
+
+type VideoNativeProps = ModifierEvents & {
+  url: string;
+  headers: Record<string, string>;
+  playing: boolean;
+  muted: boolean;
+  loop: boolean;
+  controls: boolean;
+  mode: string;
+  rate: number;
+  seek?: number;
+  seekKey: number;
+  onReady?: (event: NativeEvent<{ duration: number; width: number; height: number }>) => void;
+  onProgress?: (event: NativeEvent<{ time: number; duration: number }>) => void;
+  onEnd?: () => void;
+  onError?: (event: NativeEvent<{ message: string }>) => void;
+  onBuffering?: (event: NativeEvent<{ buffering: boolean }>) => void;
+  modifiers: ModifierConfig[];
+};
+const ScriptorUI = requireNativeModule<{ prefetchImages(urls: string[], headers?: Record<string, string>): Promise<void> }>('ScriptorUI');
+
+/** Downloads images ahead (the next stories, say) so they show at once when drawn. */
+export const prefetchImages = (urls: string[], headers?: Record<string, string>) => ScriptorUI.prefetchImages(urls.map(String), headers);
+
+const NativeVideo = requireNativeView<VideoNativeProps>('ScriptorUI', 'InlineVideoView');
+
+export type VideoHandle = { seek: (seconds: number) => void };
+
+type VideoProps = ViewProps & {
+  url: string;
+  headers?: Record<string, string>;
+  playing?: boolean;
+  muted?: boolean;
+  loop?: boolean;
+  controls?: boolean;
+  mode?: 'fit' | 'fill';
+  rate?: number;
+  ratio?: number;
+  onReady?: (info: { duration: number; width: number; height: number }) => void;
+  onProgress?: (time: number, duration: number) => void;
+  onEnd?: () => void;
+  onError?: (message: string) => void;
+  onBuffering?: (buffering: boolean) => void;
+  ref?: Ref<VideoHandle>;
+};
+
+/**
+ * A video in the page, from the internet (with headers) or a file. `playing` and `muted` control
+ * it; `ref.current.seek(s)` jumps. It fills the space it gets unless width, height or ratio say otherwise.
+ */
+function Video({ url, headers, playing = true, muted = false, loop = false, controls = false, mode = 'fit', rate = 1, ratio, onReady, onProgress, onEnd, onError, onBuffering, ref, ...rest }: VideoProps) {
+  const accent = useAccent();
+  const [seek, setSeek] = useState<{ to?: number; key: number }>({ key: 0 });
+  useImperativeHandle(ref, () => ({ seek: (seconds: number) => setSeek((s) => ({ to: seconds, key: s.key + 1 })) }));
+  const sized = rest.width !== undefined || rest.height !== undefined || rest.maxHeight !== undefined;
+  const shape = ratio ? [aspectRatio({ ratio, contentMode: 'fit' })] : sized ? [] : [frame({ maxWidth: Infinity, maxHeight: Infinity })];
+  const modifiers = [...shape, ...common(rest, accent)];
+  return (
+    <NativeVideo
+      url={url}
+      headers={headers ?? {}}
+      playing={playing}
+      muted={muted}
+      loop={loop}
+      controls={controls}
+      mode={mode}
+      rate={rate}
+      seek={seek.to}
+      seekKey={seek.key}
+      onReady={onReady ? (e) => onReady(e.nativeEvent) : undefined}
+      onProgress={onProgress ? (e) => onProgress(e.nativeEvent.time, e.nativeEvent.duration) : undefined}
+      onEnd={onEnd}
+      onError={onError ? (e) => onError(e.nativeEvent.message) : undefined}
+      onBuffering={onBuffering ? (e) => onBuffering(e.nativeEvent.buffering) : undefined}
+      modifiers={modifiers}
+      {...modifierEvents(modifiers)}
+    />
+  );
 }
 
 function Toggle({ label, icon, value, onChange, ...rest }: ViewProps & { label?: string; icon?: string; value?: boolean; onChange?: (value: boolean) => void }) {
@@ -461,7 +643,7 @@ function WebView({ url, html, baseURL, onMessage, onLoad, inject, ref, ...rest }
   );
 }
 
-export const COMPONENTS = { Text, VStack, HStack, ZStack, GlassGroup, Spacer, Divider, Page, List, Section, Card, Row, Button, IconButton, Image, Toggle, Slider, Stepper, TextField, Picker, Progress, Empty, WebView };
+export const COMPONENTS = { Text, VStack, HStack, ZStack, GlassGroup, Spacer, Divider, Page, List, Section, Card, Row, Button, IconButton, Image, Toggle, Slider, Stepper, TextField, Picker, Progress, Empty, WebView, Video };
 
 /** Views whose children are text; h() leaves loose strings inside them as they are. */
 export const TEXT_TYPES = new Set<unknown>([Text, NativeText]);

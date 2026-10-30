@@ -13,7 +13,7 @@ import { PlatformColor } from 'react-native';
 
 import { readScript } from '@/lib/scripts';
 
-import { COMPONENTS, TEXT_TYPES, TintContext } from './components';
+import { COMPONENTS, TEXT_TYPES, TintContext, prefetchImages } from './components';
 import { createHost, type Host as ScriptorHost } from './host';
 import { loadModules } from './modules';
 import { LOOP_GUARD, MiniappError, appComponent, baseName, compileFile, createLoopGuard, evaluate, formatLog } from './runtime';
@@ -179,6 +179,7 @@ function createRuntime(host: ScriptorHost, dataPath: string, data: Record<string
     confirm: (message: unknown, title?: string) => host.call('confirm', [String(message), title]),
     prompt: (message: unknown, value = '', title?: string) => host.call('prompt', [String(message), value, title]),
     haptic: (kind = 'light') => host.call('UI.haptic', [kind]),
+    prefetchImages,
     close: () => {
       if (!disposed) close();
     },
