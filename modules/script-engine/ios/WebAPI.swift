@@ -43,6 +43,8 @@ enum WebAPI {
   }
 
   static func register(_ r: NativeRegistry) {
+    registerCookies(r)
+
     // The view is created on main; later calls are queued behind it there, so they find it.
     r.sync("web.create") { run, _ in
       idLock.lock()
@@ -369,5 +371,65 @@ final class WebScreenController: ScriptScreenController {
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.insertSubview(webView, at: 0)
     navigationItem.title = webView.title
+  }
+}
+
+// MARK: - Cookies of the in-app web views
+
+extension WebAPI {
+  /// Script WebViews and miniapp <WebView>s share WKWebsiteDataStore.default(), so a sign-in
+  /// in either is readable here and can go in a Cookie header.
+  static func registerCookies(_ r: NativeRegistry) {
+    // (domain?) -> [{ name, value, domain, path, expires, secure, httpOnly }]
+    r.async("net.webCookies") { _, a, done in
+      let domain = normalizedDomain(a.optString(0))
+      DispatchQueue.main.async {
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+          let list: [[String: Any]] = cookies.filter { matches($0, domain) }.map { cookie in
+            var item: [String: Any] = [
+              "name": cookie.name, "value": cookie.value, "domain": cookie.domain, "path": cookie.path,
+              "secure": cookie.isSecure, "httpOnly": cookie.isHTTPOnly,
+            ]
+            if let expires = cookie.expiresDate { item["expires"] = expires.timeIntervalSince1970 * 1000 }
+            return item
+          }
+          done(.success(list))
+        }
+      }
+    }
+
+    // (domain?) -> number of cookies removed. Without a domain, removes all of them (sign out everywhere).
+    r.async("net.clearWebCookies") { _, a, done in
+      let domain = normalizedDomain(a.optString(0))
+      DispatchQueue.main.async {
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        store.getAllCookies { cookies in
+          let doomed = cookies.filter { matches($0, domain) }
+          let group = DispatchGroup()
+          for cookie in doomed {
+            group.enter()
+            store.delete(cookie) { group.leave() }
+          }
+          group.notify(queue: .main) { done(.success(doomed.count)) }
+        }
+      }
+    }
+  }
+
+  /// "https://www.instagram.com/x" and ".instagram.com" both become "instagram.com".
+  private static func normalizedDomain(_ text: String?) -> String? {
+    guard var domain = text?.trimmingCharacters(in: .whitespaces).lowercased(), !domain.isEmpty else { return nil }
+    if let host = URL(string: domain)?.host, domain.contains("://") { domain = host }
+    while domain.hasPrefix(".") { domain.removeFirst() }
+    if domain.hasPrefix("www.") { domain.removeFirst(4) }
+    return domain
+  }
+
+  /// A cookie for the domain or any of its subdomains.
+  private static func matches(_ cookie: HTTPCookie, _ domain: String?) -> Bool {
+    guard let domain else { return true }
+    var host = cookie.domain.lowercased()
+    while host.hasPrefix(".") { host.removeFirst() }
+    return host == domain || host.hasSuffix("." + domain)
   }
 }

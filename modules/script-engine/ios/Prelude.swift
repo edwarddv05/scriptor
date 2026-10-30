@@ -493,6 +493,10 @@ enum Prelude {
       if (init.signal) init.signal.addEventListener('abort', () => callSync('net.cancel', id));
       return promise;
     },
+    /** Cookies the in-app web views keep for a domain (and its subdomains): a sign-in done in a WebView. */
+    webCookies: (domain) => callAsync('net.webCookies', [domain == null ? null : String(domain)]),
+    /** Signs the web views out of a domain, or out of everything without one. Resolves with how many were removed. */
+    clearWebCookies: (domain) => callAsync('net.clearWebCookies', [domain == null ? null : String(domain)]),
     /** Streams a file from disk as the request body. */
     async upload(url, path, init = {}) {
       const onEvent = (e) => { if (init.onProgress) init.onProgress(e); };

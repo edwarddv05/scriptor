@@ -41,6 +41,7 @@ export const API_DOCS: ApiSection[] = [
     items: [
       { name: 'fetch', signature: 'await fetch(url, { method, headers, body, signal, timeout, redirect, onProgress })', description: 'body acepta string, Uint8Array, Blob, FormData o URLSearchParams. Respuesta con text(), json(), bytes(), arrayBuffer(), blob().' },
       { name: 'Net.download', signature: 'await Net.download(url, dest?, { headers, onProgress, signal })', description: 'Guarda directamente en disco sin cargar el archivo en memoria. Devuelve { path, status, size }.' },
+      { name: 'Net.webCookies', signature: 'await Net.webCookies(domain?) / Net.clearWebCookies(domain?)', description: 'Cookies que guardan los navegadores internos (WebView y <WebView>) para un dominio: iniciar sesión una vez y usarla en fetch.' },
       { name: 'Net.upload', signature: 'await Net.upload(url, path, { method, headers, onProgress })', description: 'Sube un archivo leyéndolo desde disco.' },
       { name: 'WebSocket', signature: 'new WebSocket(url, protocols?)', description: 'onopen, onmessage, onclose, onerror, send(text|bytes), close().' },
       { name: 'AbortController', signature: 'new AbortController()', description: 'Cancela fetch y descargas con controller.abort().' },

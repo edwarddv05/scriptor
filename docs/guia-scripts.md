@@ -293,6 +293,21 @@ const { path, size } = await Net.download('https://example.com/video.mp4', 'desc
 
 Sube un archivo leyéndolo desde disco. Usa `POST` por defecto. Acepta `method`, `headers`, `timeout` y `onProgress`, y devuelve una respuesta como la de `fetch`.
 
+### `await Net.webCookies(dominio?)`
+
+Las cookies que guardan los navegadores internos (el `WebView` de los scripts y el `<WebView>` de las miniapps comparten almacén) para un dominio y sus subdominios. Sirve para iniciar sesión una vez en una web y luego hacer peticiones con esa sesión.
+
+```js
+const cookies = await Net.webCookies('instagram.com');
+// [{ name, value, domain, path, expires, secure, httpOnly }]
+const cookie = cookies.map((c) => c.name + '=' + c.value).join('; ');
+const res = await fetch('https://www.instagram.com/api/v1/...', { headers: { Cookie: cookie } });
+```
+
+- `expires` va en milisegundos, como `Date.now()`; las cookies de sesión no lo traen.
+- Sin dominio devuelve todas.
+- `await Net.clearWebCookies(dominio?)` cierra la sesión de ese dominio (o de todas las webs) y devuelve cuántas cookies borró.
+
 ### `WebSocket`
 
 ```js
