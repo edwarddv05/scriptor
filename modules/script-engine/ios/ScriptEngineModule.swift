@@ -31,9 +31,11 @@ public class ScriptEngineModule: Module {
       let run = ScriptRun(
         id: runId, name: name, source: source, input: input ?? [:],
         onLogs: { [weak self] logs in
+          ConsolePiP.shared.log(runId, logs)
           self?.sendEvent("onLogs", ["runId": runId, "logs": logs])
         },
         onFinish: { [weak self] run, result, error in
+          ConsolePiP.shared.end(run.id, error: error)
           guard let self else { return }
           self.lock.lock()
           self.runs[run.id] = nil
@@ -47,6 +49,8 @@ public class ScriptEngineModule: Module {
       self.lock.lock()
       self.runs[runId] = run
       self.lock.unlock()
+      // Leaving the app while it runs opens its console in Picture in Picture, which keeps it going.
+      ConsolePiP.shared.begin(runId, name: name)
       run.start()
     }
 
@@ -170,10 +174,15 @@ public class ScriptEngineModule: Module {
 
   /// Python runs report through the same onLogs/onFinish events as JavaScript runs.
   private func runPython(id: String, name: String, source: String, input: [String: Any], repl: Bool, session: String? = nil) {
+    ConsolePiP.shared.begin(id, name: name)
     PythonEngine.shared.run(
       id: id, name: name, source: source, input: input, repl: repl, session: session,
-      onLogs: { [weak self] logs in self?.sendEvent("onLogs", ["runId": id, "logs": logs]) },
+      onLogs: { [weak self] logs in
+        ConsolePiP.shared.log(id, logs)
+        self?.sendEvent("onLogs", ["runId": id, "logs": logs])
+      },
       onFinish: { [weak self] result, error in
+        ConsolePiP.shared.end(id, error: error)
         var body: [String: Any] = ["runId": id]
         if let result { body["result"] = result }
         if let error { body["error"] = error }

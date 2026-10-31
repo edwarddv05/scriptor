@@ -212,7 +212,6 @@ private struct ImageRequest: Equatable {
 
 struct RemoteImageView: ExpoSwiftUI.View {
   @ObservedObject var props: RemoteImageProps
-  @State private var size: CGSize = .zero
   @State private var loaded: RemoteImages.Decoded?
   @State private var loadedURL = ""
   @State private var failed = false
@@ -224,13 +223,13 @@ struct RemoteImageView: ExpoSwiftUI.View {
   // Decoded sizes come in steps, so a view that resizes a little does not decode again.
   private static let steps = [128, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096]
 
-  private var pixels: Int {
+  private static func pixels(for size: CGSize) -> Int {
     let longest = max(size.width, size.height) * UIScreen.main.scale
     guard longest > 0 else { return 0 }
-    return Self.steps.first { CGFloat($0) >= longest } ?? 4096
+    return steps.first { CGFloat($0) >= longest } ?? 4096
   }
 
-  private var shown: RemoteImages.Decoded? {
+  private func shown(_ pixels: Int) -> RemoteImages.Decoded? {
     if loadedURL == props.url, let loaded { return loaded }
     return pixels > 0 ? RemoteImages.shared.cached(props.url, pixels: pixels) : nil
   }
@@ -238,40 +237,48 @@ struct RemoteImageView: ExpoSwiftUI.View {
   private var ratio: CGFloat? {
     if let ratio = props.ratio, ratio > 0 { return CGFloat(ratio) }
     if props.mode == "fill" { return nil }
-    guard let size = shown?.size, size.height > 0 else { return 1 }
+    guard loadedURL == props.url, let size = loaded?.size, size.height > 0 else { return 1 }
     return size.width / size.height
   }
 
+  // The size is read where the image is drawn and the download starts from there, so it begins
+  // as soon as the view is laid out (a size preference did not always reach the view's state).
   var body: some View {
-    let fill = props.mode == "fill"
     Rectangle()
       .fill(Color.clear)
       .modifier(OptionalAspectRatio(ratio: ratio))
       .overlay {
-        ZStack {
-          if let image = shown?.image {
-            Image(uiImage: image)
-              .resizable()
-              .aspectRatio(contentMode: fill ? .fill : .fit)
-              .transition(.opacity)
-          } else if failed {
-            Image(systemName: "photo")
-              .foregroundStyle(.tertiary)
-          } else {
-            Rectangle().fill(props.placeholder ?? Color(UIColor.secondarySystemFill))
-          }
+        GeometryReader { proxy in
+          let pixels = Self.pixels(for: proxy.size)
+          content(shown(pixels))
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .task(id: ImageRequest(url: props.url, headers: props.headers, pixels: pixels)) {
+              await load(pixels)
+            }
         }
-        .animation(.easeOut(duration: 0.2), value: shown != nil)
       }
       .clipped()
-      .background(GeometryReader { proxy in Color.clear.preference(key: SizeKey.self, value: proxy.size) })
-      .onPreferenceChange(SizeKey.self) { size = $0 }
-      .task(id: ImageRequest(url: props.url, headers: props.headers, pixels: pixels)) {
-        await load()
-      }
   }
 
-  private func load() async {
+  @ViewBuilder
+  private func content(_ decoded: RemoteImages.Decoded?) -> some View {
+    ZStack {
+      if let image = decoded?.image {
+        Image(uiImage: image)
+          .resizable()
+          .aspectRatio(contentMode: props.mode == "fill" ? .fill : .fit)
+          .transition(.opacity)
+      } else if failed {
+        Image(systemName: "photo")
+          .foregroundStyle(.tertiary)
+      } else {
+        Rectangle().fill(props.placeholder ?? Color(UIColor.secondarySystemFill))
+      }
+    }
+    .animation(.easeOut(duration: 0.2), value: decoded != nil)
+  }
+
+  private func load(_ pixels: Int) async {
     let url = props.url
     guard !url.isEmpty, pixels > 0 else { return }
     if loadedURL != url { failed = false }

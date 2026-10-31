@@ -146,6 +146,8 @@ export const API_DOCS: ApiSection[] = [
     items: [
       { name: 'export default function App', signature: 'export default function App() { return <VStack>…</VStack>; }', description: 'El componente que dibuja la miniapp. Los hooks de React, los componentes y la API ya están disponibles sin importar nada.' },
       { name: 'useStored', signature: 'const [valor, setValor] = useStored(clave, inicial)', description: 'Como useState, pero el valor se guarda entre aperturas. Sin hook: storage.get(clave, porDefecto) / set / remove / keys / clear.' },
+      { name: 'useLocation', signature: 'const { location, error } = useLocation({ precise, distance }) · useHeading()', description: 'Posición que se actualiza al moverte y rumbo en grados. Sin await; null hasta la primera lectura.' },
+      { name: 'useAccelerometer', signature: 'useAccelerometer(ms) · useGyroscope(ms) · useBarometer(ms) · useAppState(alCambiar)', description: 'Lecturas de los sensores como estado de React ({ x, y, z } o { pressure, relativeAltitude }) y si la app está activa.' },
       { name: 'await FS.readText', signature: 'await FS.readText(ruta) · await Photos.pick() · await Device.info()', description: 'La API de Scriptor, siempre con await. Las propiedades se leen llamándolas: await FS.documents(). Otras globales: await Scriptor.Image.resize(…).' },
       { name: '<Text>', signature: "<Text style='title' weight='bold' color='secondary' mono lines={2}>…</Text>", description: "style: 'largeTitle', 'title', 'headline', 'body', 'footnote', 'caption'…" },
       { name: '<VStack>', signature: '<VStack spacing alignment> / <HStack> / <ZStack> / <Page> / <List><Section title> / <Card glass>', description: 'Pilas, página desplazable, lista agrupada y tarjeta.' },

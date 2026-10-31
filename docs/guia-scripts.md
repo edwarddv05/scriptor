@@ -79,6 +79,14 @@ Esto significa que un `setInterval` que no se cancela mantiene el script vivo. P
 
 Las promesas rechazadas que nadie gestiona no detienen el script; aparecen como aviso: `Unhandled promise rejection: …`.
 
+### En segundo plano
+
+Si sales de Scriptor mientras un script `.js` o `.py` se está ejecutando, su consola se abre en una ventana de **Picture in Picture** con las últimas líneas. Mientras esa ventana está abierta, iOS no suspende la app, así que el script sigue hasta terminar. Puedes esconder la ventana en el borde de la pantalla y seguirá corriendo. Al acabar, la ventana muestra *Terminado* o el error durante unos segundos y se cierra sola. Al volver a Scriptor también se cierra.
+
+- Si cierras la ventana con la ✕, iOS puede suspender la app a los pocos segundos.
+- Las miniapps no la abren: se pausan al salir.
+- La sesión de audio se activa en modo mezcla, así que la música que estés escuchando no se corta.
+
 > **Pantallas a pantalla completa.** Las tablas y webs presentadas con `fullscreen = true` no tienen botón de cerrar. Agita el iPhone para que aparezca una barra con la opción de salir.
 
 ---
@@ -943,6 +951,7 @@ Si la miniapp lanza un error (al dibujar, en un `onPress` o en una promesa sin c
 |---|---|
 | `useState`, `useEffect`, `useMemo`, `useRef`, `useCallback`, `useReducer`, `useContext` | Los hooks de React |
 | `useStored(clave, inicial)` | Como `useState`, pero el valor se guarda y sigue ahí la próxima vez |
+| `useLocation`, `useHeading`, `useAccelerometer`, `useGyroscope`, `useBarometer`, `useAppState` | Hooks que siguen al iPhone mientras la miniapp está abierta: ver [Sensores y ubicación](#sensores-y-ubicación) |
 | `storage.get(clave, porDefecto)` / `set` / `remove` / `keys` / `clear` | Los mismos datos guardados, sin hook |
 | `FS`, `Net`, `Photos`, `Camera`, `Video`, `Audio`, `Speech`, `Pasteboard`, `Notify`, `Device`, `Keychain`, `Crypto`, `Location`, `Calendar`, `Contacts`, `Safari`, `Mail`, `Message`, `ShareSheet`, `QuickLook`, `Dictation`, `DocumentPicker`, `UI`, `Script` | La API de Scriptor de las secciones anteriores. Cada llamada devuelve una promesa |
 | `Scriptor` | Cualquier otra función global de Scriptor: `await Scriptor.Image.resize(ruta, { width: 400 })` |
@@ -1081,6 +1090,38 @@ Un visor de stories, por ejemplo:
 
 Para el giro de cubo entre cuentas, cambia `rotation3D` de `0` a `-90` (o `90`) con `animateOn`, y luego cambia de cuenta con `rotation3D` a `0`.
 
+### Sensores y ubicación
+
+Estos hooks leen el iPhone directamente, sin pasar por la API de Scriptor, así que no llevan `await`. Cada lectura nueva vuelve a dibujar la vista, y todo se para al cerrar la miniapp.
+
+| Hook | Devuelve |
+|---|---|
+| `useLocation({ precise, distance })` | `{ location, error }`. `location` es `{ latitude, longitude, altitude, horizontalAccuracy, verticalAccuracy, speed, time }`, o `null` hasta la primera lectura. Se actualiza al moverte `distance` metros (10 por defecto). `precise: true` usa el GPS al máximo. Pide permiso la primera vez |
+| `useHeading()` | Rumbo en grados desde el norte (0–360), o `null` |
+| `useAccelerometer(ms)` | `{ x, y, z }` en g, cada `ms` milisegundos (100 por defecto), o `null` |
+| `useGyroscope(ms)` | `{ x, y, z }` en radianes por segundo (100 ms por defecto) |
+| `useBarometer(ms)` | `{ pressure, relativeAltitude }`: hPa y metros de subida desde que empezó (500 ms por defecto) |
+| `useAppState(alCambiar?)` | `'active'`, `'inactive'` o `'background'`. `alCambiar` se llama en cada cambio, por ejemplo para guardar al salir |
+
+```jsx
+export default function App() {
+  const { location, error } = useLocation({ distance: 5 });
+  const rumbo = useHeading();
+  const inclinacion = useAccelerometer(50);
+
+  if (error) return <Empty title="Sin ubicación" icon="location.slash" detail={error} />;
+  return (
+    <Page>
+      <Row label="Posición" value={location ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : '…'} />
+      <Image symbol="location.north.fill" size={64} rotation={-(rumbo ?? 0)} />
+      <Text mono>{inclinacion ? inclinacion.x.toFixed(2) : '–'}</Text>
+    </Page>
+  );
+}
+```
+
+Para una sola lectura, `await Location.current()` sigue funcionando como en los scripts.
+
 ### Combinar un `WebView` con controles nativos
 
 `<WebView>` muestra una página dentro de la miniapp y deja poner controles nativos y Liquid Glass encima o alrededor. La página llama a `window.sendToScript(valor)` y la miniapp lo recibe en `onMessage`. Con un `ref`, `web.current.run(js)` ejecuta código en la página, y `goBack()` y `reload()` navegan:
@@ -1190,4 +1231,4 @@ El botón de terminal, arriba a la izquierda de la lista de scripts, abre una te
 
 ## Mantener esta guía al día
 
-Python corre en [PythonEngine.swift](../modules/script-engine/ios/PythonEngine.swift) con la página de [python-runtime.js](../modules/script-engine/js/python-runtime.js) y el módulo `scriptor` de [scriptor_py.py](../modules/script-engine/js/scriptor_py.py); la terminal es [src/app/terminal.tsx](../src/app/terminal.tsx). Las miniapps se ejecutan en [src/miniapp](../src/miniapp): `runtime.ts` (compilar y ejecutar), `components.tsx` (componentes), `screen.tsx` (pantalla y API) y `host.ts` (puente con Scriptor). Las APIs se definen en [modules/script-engine/js/prelude.js](../modules/script-engine/js/prelude.js) (APIs de Scriptor) y [scriptable.js](../modules/script-engine/js/scriptable.js) (compatibilidad), sobre las funciones nativas de [modules/script-engine/ios](../modules/script-engine/ios). Al añadir o cambiar una función, actualiza también esta guía y la referencia corta de [src/lib/api-docs.ts](../src/lib/api-docs.ts), que alimenta la pantalla de documentación y el autocompletado del editor.
+Python corre en [PythonEngine.swift](../modules/script-engine/ios/PythonEngine.swift) con la página de [python-runtime.js](../modules/script-engine/js/python-runtime.js) y el módulo `scriptor` de [scriptor_py.py](../modules/script-engine/js/scriptor_py.py); la terminal es [src/app/terminal.tsx](../src/app/terminal.tsx). Las miniapps se ejecutan en [src/miniapp](../src/miniapp): `runtime.ts` (compilar y ejecutar), `components.tsx` (componentes), `screen.tsx` (pantalla y API), `device.ts` (hooks de sensores y ubicación, con los módulos de Expo) y `host.ts` (puente con Scriptor). Las APIs se definen en [modules/script-engine/js/prelude.js](../modules/script-engine/js/prelude.js) (APIs de Scriptor) y [scriptable.js](../modules/script-engine/js/scriptable.js) (compatibilidad), sobre las funciones nativas de [modules/script-engine/ios](../modules/script-engine/ios). Al añadir o cambiar una función, actualiza también esta guía y la referencia corta de [src/lib/api-docs.ts](../src/lib/api-docs.ts), que alimenta la pantalla de documentación y el autocompletado del editor.

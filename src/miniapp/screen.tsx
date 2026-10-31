@@ -14,6 +14,7 @@ import { PlatformColor } from 'react-native';
 import { readScript } from '@/lib/scripts';
 
 import { COMPONENTS, TEXT_TYPES, TintContext, prefetchImages } from './components';
+import { listenAccelerometer, useAccelerometer, useAppState, useBarometer, useGyroscope, useHeading, useLocation } from './device';
 import { createHost, type Host as ScriptorHost } from './host';
 import { loadModules } from './modules';
 import { LOOP_GUARD, MiniappError, appComponent, baseName, compileFile, createLoopGuard, evaluate, formatLog } from './runtime';
@@ -175,6 +176,9 @@ function createRuntime(host: ScriptorHost, dataPath: string, data: Record<string
   const scope: Record<string, unknown> = {
     React, Fragment, h,
     useState, useEffect, useMemo, useRef, useCallback, useReducer, useContext, useStored,
+    useLocation, useHeading, useAccelerometer, useGyroscope, useBarometer,
+    // The change handler runs guarded, like an onPress: a throw becomes the error screen.
+    useAppState: (onChange?: (state: string) => void) => useAppState(onChange && guard(onChange)),
     ...COMPONENTS,
     ...api,
     Scriptor: host.api(),
@@ -239,15 +243,15 @@ function useShake(enabled: boolean, onShake: () => void) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    let subscription: { remove: () => void } | null = null;
+    let stop: (() => void) | null = null;
     // A shake is several strong jolts within a second; one bump counts once.
     let jolts: number[] = [];
     let quietUntil = 0;
     Accelerometer.isAvailableAsync().then(
       (available) => {
         if (!available || cancelled) return;
-        Accelerometer.setUpdateInterval(50);
-        subscription = Accelerometer.addListener(({ x, y, z }) => {
+        // Shared with the miniapp's useAccelerometer, so neither changes the other's rate.
+        stop = listenAccelerometer(50, ({ x, y, z }) => {
           const now = Date.now();
           if (now < quietUntil || Math.sqrt(x * x + y * y + z * z) < 2.2) return;
           if (jolts.length && now - jolts[jolts.length - 1] < 100) return;
@@ -262,7 +266,7 @@ function useShake(enabled: boolean, onShake: () => void) {
     );
     return () => {
       cancelled = true;
-      subscription?.remove();
+      stop?.();
     };
   }, [enabled]);
 }
