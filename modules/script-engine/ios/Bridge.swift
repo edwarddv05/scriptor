@@ -36,6 +36,7 @@ final class NativeRegistry {
     LocationAPI.register(self)
     CalendarAPI.register(self)
     ContactsAPI.register(self)
+    ServerAPI.register(self)
     SystemUIAPI.register(self)
   }
 

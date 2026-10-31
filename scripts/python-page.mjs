@@ -22,9 +22,34 @@ ${pythonRuntimeSource()}
     if (url && url.startsWith('https://files.pythonhosted.org/')) return realFetch('scriptor-py://app/cache/' + encodeURIComponent(url), init);
     return realFetch(input, init);
   };
+  // iOS suspends a web view's process once the app is in the background, even while Picture in
+  // Picture keeps the app itself awake. A page playing audio keeps running, so while Python runs
+  // the page plays an inaudible tone.
+  let awake = null;
+  function keepAwake(on) {
+    try {
+      if (on && !awake) {
+        const context = new AudioContext();
+        const tone = context.createOscillator();
+        const gain = context.createGain();
+        gain.gain.value = 0.0001;
+        tone.connect(gain).connect(context.destination);
+        tone.start();
+        awake = context;
+      } else if (!on && awake) {
+        awake.close();
+        awake = null;
+      }
+    } catch (error) {
+      post({ type: 'log', run: '', level: 'warn', text: 'No se pudo mantener Python activo en segundo plano: ' + error });
+    }
+  }
   let runtime = null;
   const early = [];
-  window.__dispatch = (message) => (runtime ? runtime.dispatch(message) : early.push(message));
+  window.__dispatch = (message) => {
+    if (message.type === 'awake') return keepAwake(message.on);
+    return runtime ? runtime.dispatch(message) : early.push(message);
+  };
   const script = document.createElement('script');
   script.src = indexURL + 'pyodide.js';
   script.onload = () => {

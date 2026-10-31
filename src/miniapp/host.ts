@@ -88,7 +88,17 @@ export function createHost(fileName: string, onLog: (level: string, text: string
       if (!call) return;
       if (message.kind === 'event') {
         const args = decode(message.value);
-        call.fns[message.fn ?? -1]?.(...(Array.isArray(args) ? args : [args]));
+        const reply = message.reply;
+        // What the callback returns (a Net.serve response) goes back through __hostReply.
+        new Promise((resolve) => resolve(call.fns[message.fn ?? -1]?.(...(Array.isArray(args) ? args : [args])))).then(
+          (result) => {
+            if (reply !== undefined) send('__hostReply', [reply, result === undefined ? null : result, null]).catch(() => {});
+          },
+          (error) => {
+            onLog('error', error instanceof Error ? error.message : String(error));
+            if (reply !== undefined) send('__hostReply', [reply, null, error instanceof Error ? error.message : String(error)]).catch(() => {});
+          },
+        );
         return;
       }
       pending.delete(message.id);
@@ -106,6 +116,10 @@ export function createHost(fileName: string, onLog: (level: string, text: string
   ];
   ScriptEngine.hostStart(runId, fileName);
 
+  // Declared as a function so the event listener above can reply before this line runs.
+  function send(path: string, args: unknown[]) {
+    return call(path, args);
+  }
   const call: Host['call'] = (path, args = []) =>
     new Promise((resolve, reject) => {
       if (closed) return reject(new Error('La miniapp ya terminó.'));

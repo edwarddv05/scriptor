@@ -84,6 +84,7 @@ Las promesas rechazadas que nadie gestiona no detienen el script; aparecen como 
 Si sales de Scriptor mientras un script `.js` o `.py` se está ejecutando, su consola se abre en una ventana de **Picture in Picture** con las últimas líneas. Mientras esa ventana está abierta, iOS no suspende la app, así que el script sigue hasta terminar. Puedes esconder la ventana en el borde de la pantalla y seguirá corriendo. Al acabar, la ventana muestra *Terminado* o el error durante unos segundos y se cierra sola. Al volver a Scriptor también se cierra.
 
 - Si cierras la ventana con la ✕, iOS puede suspender la app a los pocos segundos.
+- Python corre en un proceso aparte que iOS suspende aunque la app siga activa. Para evitarlo, mientras un `.py` se ejecuta, Python reproduce un tono inaudible.
 - Las miniapps no la abren: se pausan al salir.
 - La sesión de audio se activa en modo mezcla, así que la música que estés escuchando no se corta.
 
@@ -315,6 +316,44 @@ const res = await fetch('https://www.instagram.com/api/v1/...', { headers: { Coo
 - `expires` va en milisegundos, como `Date.now()`; las cookies de sesión no lo traen.
 - Sin dominio devuelve todas.
 - `await Net.clearWebCookies(dominio?)` cierra la sesión de ese dominio (o de todas las webs) y devuelve cuántas cookies borró.
+
+### `await Net.serve(puerto, manejador, opciones?)`
+
+Abre un servidor HTTP en el iPhone que responde con tu función. Vive mientras el script esté en marcha: al pulsar Detener, o con `Net.stopServer(puerto)`, se cierra. Si sales de la app, el Picture in Picture lo mantiene abierto (ver [En segundo plano](#en-segundo-plano)).
+
+```js
+await Net.serve(8080, async (req) => {
+  if (req.path === '/') return '<h1>Hola desde Scriptor</h1>';
+  if (req.path === '/hora') return { hora: new Date().toISOString() };
+  if (req.path === '/foto') return { file: 'Imagenes/foto.jpg' };
+  return null; // 404
+}, { onStart: ({ url }) => console.log('Abierto en', url) });
+```
+
+- **La petición** (`req`): `method`, `path`, `url` (con la query), `query` (objeto), `headers` (en minúsculas), `body` (`Uint8Array`), `text` (el cuerpo como texto) y `address` (quién llama).
+- **La respuesta** es lo que devuelve la función (puede ser `async`):
+  - un texto, que se envía como HTML si empieza por `<` o como texto plano si no;
+  - un objeto o una lista, que se envía como JSON;
+  - bytes (`Uint8Array`);
+  - `{ status, headers, body }` para controlarlo todo, o `{ file: 'ruta' }` para enviar un archivo con su tipo;
+  - `null` o nada, que da un 404.
+- Si la función lanza un error, el navegador recibe un 500 y el error sale en la consola.
+- **Opciones:** `onStart({ port, url, addresses })` se llama al abrirse. `lan: true` lo abre también a otros dispositivos de tu Wi-Fi: `addresses` trae sus URLs, e iOS pide permiso de red local la primera vez. Sin `lan`, solo lo ve este iPhone (Safari en `http://localhost:8080`). `signal` (un `AbortController`) lo cierra.
+- El puerto `0` elige uno libre. Si el puerto está ocupado, la promesa falla con un mensaje.
+- La promesa de `Net.serve` no termina mientras el servidor está abierto. Si después de abrirlo quieres hacer otras cosas, no la esperes con `await`: guárdala y sigue.
+
+Desde Python funciona igual. La función puede ser `async def` y devolver un `dict`, un `str` o `bytes`:
+
+```python
+from scriptor import Net
+
+async def responder(req):
+    if req['path'] == '/':
+        return '<h1>Hola desde Python</h1>'
+    return {'status': 404, 'body': 'No existe'}
+
+await Net.serve(8080, responder, onStart=lambda info: print('Abierto en', info['url']))
+```
 
 ### `WebSocket`
 

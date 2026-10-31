@@ -503,7 +503,70 @@ enum Prelude {
       const r = await callAsync('net.upload', [String(url), path, transferOpts({ method: 'POST', ...init })], onEvent);
       return new Response(r.body, { status: r.status, statusText: r.statusText, headers: r.headers, url: r.url });
     },
+    /**
+     * An HTTP server on `port` (8080; 0 picks a free one) that answers with `handler(request)`.
+     * Only this iPhone reaches it unless `lan: true`. The promise settles when it stops: with
+     * Net.stopServer(port), options.signal, or the end of the script.
+     */
+    serve(port, handler, options = {}) {
+      if (typeof port === 'function') { options = handler || {}; handler = port; port = 8080; }
+      if (typeof handler !== 'function') throw new Error('Net.serve necesita una función que responda cada petición.');
+      let actualPort = null;
+      const { id, promise } = callAsyncWithId('server.start', [Number(port), { lan: options.lan === true }], (e) => {
+        if (e.type === 'start') {
+          actualPort = e.port;
+          servers.set(e.port, id);
+          if (options.onStart) options.onStart({ port: e.port, url: e.url, addresses: e.addresses || [] });
+        } else if (e.type === 'request') {
+          answer(id, e, handler);
+        }
+      });
+      if (options.signal) options.signal.addEventListener('abort', () => callSync('server.stop', id));
+      const forget = () => { if (actualPort !== null) servers.delete(actualPort); };
+      return promise.then((value) => { forget(); return value; }, (error) => { forget(); throw error; });
+    },
+    /** Stops the server on `port`, or every server of this script without one. */
+    stopServer(port) {
+      for (const [p, id] of [...servers]) if (port == null || p === Number(port)) callSync('server.stop', id);
+    },
   };
+
+  // Servers this script has open: port -> call id.
+  const servers = new Map();
+
+  function answer(serverId, e, handler) {
+    const request = {
+      method: e.method, url: e.url, path: e.path, query: e.query, headers: e.headers, address: e.address,
+      body: e.body, text: new TextDecoder().decode(e.body),
+    };
+    const reply = (status, headers, body, file) => callSync('server.respond', serverId, e.id, status, headers, body, file);
+    Promise.resolve()
+      .then(() => handler(request))
+      .then((res) => {
+        if (res === undefined || res === null) return reply(404, { 'content-type': 'text/plain; charset=utf-8' }, 'No encontrado', null);
+        if (typeof res === 'string') {
+          const html = /^\s*</.test(res);
+          return reply(200, { 'content-type': html ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8' }, res, null);
+        }
+        if (res instanceof ArrayBuffer || ArrayBuffer.isView(res)) return reply(200, { 'content-type': 'application/octet-stream' }, toNative(res), null);
+        // { status, headers, body, file } is a response; any other object or array goes out as JSON.
+        const isResponse = typeof res === 'object' && !Array.isArray(res) && ['status', 'headers', 'body', 'file'].some((key) => key in res);
+        if (!isResponse) return reply(200, { 'content-type': 'application/json; charset=utf-8' }, JSON.stringify(res), null);
+        const headers = {};
+        for (const [name, value] of Object.entries(res.headers || {})) headers[name.toLowerCase()] = String(value);
+        let body = res.body;
+        if (body !== undefined && body !== null && typeof body !== 'string' && !(body instanceof ArrayBuffer || ArrayBuffer.isView(body))) {
+          body = JSON.stringify(body);
+          if (!headers['content-type']) headers['content-type'] = 'application/json; charset=utf-8';
+        }
+        if (typeof body === 'string' && !headers['content-type']) headers['content-type'] = /^\s*</.test(body) ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8';
+        return reply(Number(res.status) || 200, headers, body === undefined || body === null ? null : toNative(body), res.file ? String(res.file) : null);
+      })
+      .catch((err) => {
+        console.error(`Net.serve ${e.method} ${e.url}: ${err instanceof Error ? err.message : inspect(err)}`);
+        reply(500, { 'content-type': 'text/plain; charset=utf-8' }, 'Error del script: ' + (err instanceof Error ? err.message : inspect(err)), null);
+      });
+  }
 
   class WebSocket {
     constructor(url, protocols = []) {
@@ -2373,11 +2436,27 @@ enum Prelude {
       if (typeof v.__date === 'string') return new Date(v.__date);
       if (typeof v.__fn === 'number') {
         const fn = v.__fn;
-        return (...xs) => { callSync('host.send', { id, kind: 'event', fn, value: hostEncode(xs) }); };
+        // The other side calls it and answers through __hostReply, so a callback can return a
+        // value (Net.serve's handler). Callbacks whose result nobody reads just ignore it.
+        return (...xs) => new Promise((resolve, reject) => {
+          const reply = nextHostReply++;
+          hostReplies.set(reply, { resolve, reject });
+          callSync('host.send', { id, kind: 'event', fn, value: hostEncode(xs), reply });
+        });
       }
       return v;
     });
   }
+  const hostReplies = new Map();
+  let nextHostReply = 1;
+  global.__hostReply = (reply, value, error) => {
+    const pending = hostReplies.get(reply);
+    if (!pending) return;
+    hostReplies.delete(reply);
+    if (error) pending.reject(new Error(error));
+    else pending.resolve(value);
+  };
+
   global.__hostCall = (id, request) => {
     const send = (kind, value) => callSync('host.send', { id, kind, value });
     Promise.resolve()

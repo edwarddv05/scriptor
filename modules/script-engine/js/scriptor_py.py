@@ -1,7 +1,9 @@
 # Scriptor's side of Python, loaded into Pyodide before any script: the `scriptor` module,
 # input(), the terminal's line runner and pip. Embedded in PythonPage.swift by
 # scripts/gen-prelude.mjs: edit this file, not the Swift one.
+import asyncio
 import builtins
+import inspect
 import sys
 import types
 
@@ -27,10 +29,24 @@ def _py(value):
     return value
 
 
+def _js(value):
+    """A callback's result as JS, so it can travel back (a Net.serve response)."""
+    if isinstance(value, (dict, list, tuple, bytes, bytearray)):
+        return to_js(value, dict_converter=js.Object.fromEntries)
+    return value
+
+
 def _callable_args(value):
-    """Callbacks get Python values (dicts, lists) instead of JS objects."""
+    """Callbacks get Python values (dicts, lists) instead of JS objects, and may be async."""
     if callable(value):
-        return lambda *args: value(*[_py(arg) for arg in args])
+        def call(*args):
+            result = value(*[_py(arg) for arg in args])
+            if inspect.isawaitable(result):
+                async def finish():
+                    return _js(await result)
+                return asyncio.ensure_future(finish())
+            return _js(result)
+        return call
     if isinstance(value, dict):
         return {key: _callable_args(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

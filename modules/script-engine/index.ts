@@ -19,7 +19,7 @@ export type ScriptFile = {
 };
 
 /** A result, error or callback call from a miniapp's host run (see hostCall). */
-export type HostMessage = { runId: string; id: number; kind: 'done' | 'error' | 'event'; value: string; fn?: number };
+export type HostMessage = { runId: string; id: number; kind: 'done' | 'error' | 'event'; value: string; fn?: number; reply?: number };
 
 type Events = {
   onLogs(event: { runId: string; logs: LogEntry[] }): void;

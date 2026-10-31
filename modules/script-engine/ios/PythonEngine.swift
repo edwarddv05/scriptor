@@ -45,6 +45,7 @@ final class PythonEngine: NSObject, WKScriptMessageHandler, WKUIDelegate {
       job.host = makeHost(for: id, name: name)
       jobs[id] = job
       ensureWebView()
+      if jobs.count == 1 { send(["type": "awake", "on": true]) }
       if !loaded { log(id, "info", "Preparando Python…") }
       send([
         "type": "run", "run": id, "name": name, "code": source, "repl": repl, "session": session ?? id,
@@ -71,6 +72,7 @@ final class PythonEngine: NSObject, WKScriptMessageHandler, WKUIDelegate {
 
   private func finish(_ id: String, result: String? = nil, error: String? = nil) {
     guard var job = jobs.removeValue(forKey: id) else { return }
+    if jobs.isEmpty { send(["type": "awake", "on": false]) }
     if let error, error != "Stopped" { job.logs.append(entry("error", error)) }
     if !job.logs.isEmpty { job.onLogs(job.logs) }
     job.host?.stop()
@@ -125,6 +127,9 @@ final class PythonEngine: NSObject, WKScriptMessageHandler, WKUIDelegate {
     guard web == nil else { return }
     let config = WKWebViewConfiguration()
     config.setURLSchemeHandler(files, forURLScheme: PythonFiles.scheme)
+    // The page plays an inaudible tone while Python runs (see python-page.mjs), with no tap first.
+    config.mediaTypesRequiringUserActionForPlayback = []
+    config.allowsInlineMediaPlayback = true
     config.userContentController.add(WeakHandler(self), name: "py")
     let saved = (try? String(contentsOf: PythonFiles.lockFile, encoding: .utf8)) ?? "null"
     let boot = "window.__savedLock = \(saved.isEmpty ? "null" : saved);"

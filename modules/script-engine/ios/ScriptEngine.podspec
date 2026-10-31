@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
   # Video.play: VLC decodes AV1 (dav1d), MKV and WebM in software on any iPhone.
   s.dependency 'MobileVLCKit', '~> 3.7'
   s.frameworks = 'JavaScriptCore', 'Photos', 'PhotosUI', 'AVFoundation', 'CryptoKit', 'UniformTypeIdentifiers', 'ImageIO', 'AVKit', 'SwiftUI', 'QuickLook', 'UserNotifications',
-                     'WebKit', 'EventKit', 'EventKitUI', 'Contacts', 'CoreLocation', 'MessageUI', 'SafariServices', 'Speech'
+                     'WebKit', 'EventKit', 'EventKitUI', 'Contacts', 'CoreLocation', 'MessageUI', 'SafariServices', 'Speech', 'Network'
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

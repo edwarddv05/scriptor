@@ -61,16 +61,23 @@ function createPythonRuntime({ loadPyodide, post, indexURL, savedLock, helperSou
     });
   globalThis.__saveLock = (text) => post({ type: 'saveLock', lock: String(text) });
 
-  function reply({ id, kind, value, fn }) {
+  function reply({ id, kind, value, fn, reply: answer }) {
     const call = calls.get(id);
     if (!call) return;
     if (kind === 'event') {
       const args = decode(value);
-      try {
-        call.fns[fn]?.(...(Array.isArray(args) ? args : [args]));
-      } catch (e) {
-        post({ type: 'log', run: current, level: 'error', text: String(e && e.message ? e.message : e) });
-      }
+      const message = (e) => String(e && e.message ? e.message : e);
+      // What the callback returns (a Net.serve response, perhaps from an async def) goes back
+      // through __hostReply; an error goes to the console as well.
+      new Promise((resolve) => resolve(call.fns[fn]?.(...(Array.isArray(args) ? args : [args])))).then(
+        (result) => {
+          if (answer !== undefined) globalThis.__scriptorCall('__hostReply', [answer, result === undefined ? null : result, null]).catch(() => {});
+        },
+        (e) => {
+          post({ type: 'log', run: current, level: 'error', text: message(e) });
+          if (answer !== undefined) globalThis.__scriptorCall('__hostReply', [answer, null, message(e)]).catch(() => {});
+        }
+      );
       return;
     }
     calls.delete(id);
